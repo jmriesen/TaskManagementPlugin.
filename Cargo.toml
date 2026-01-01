@@ -1,0 +1,10 @@
+[package]
+name = "search"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tree-sitter = "0.26.3"
+# I want to use the tags feature
+# This requires compileing tree-sitter-markdown myself with some env variables set.
+tree-sitter-md = {path = "../tree-sitter-markdown/"}
