@@ -1,8 +1,9 @@
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 
 use serde::Serialize;
-use tree_sitter::{Parser, StreamingIterator, Tree};
+use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
@@ -10,53 +11,82 @@ use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 pub struct SearchResult {
     lable: String,
     tags: Vec<String>,
+    path: String,
+    lnum: usize,
 }
 
-pub fn find_next_actions(mut file: File) -> Vec<SearchResult> {
+pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
     let mut parser = Parser::new();
     parser
         .set_language(&MD.into())
         .expect("Error loading Markdown inline grammar");
     let mut source = String::new();
+    let mut file = File::open(path).expect("error opening file");
     file.read_to_string(&mut source).unwrap();
     let tree = parser.parse(&source, None).unwrap();
 
     extract_todos(&source, &tree)
         .iter()
-        .filter_map(|(tree, text)| {
-            let tags = extract_tags(text, tree.root_node());
-            if tags.contains(&"#NextAction") {
-                Some(SearchResult {
+        .filter_map(
+            |InLineTree {
+                 tree,
+                 text,
+                 start_point,
+             }| {
+                let tags = extract_tags(text, tree.root_node());
+                if tags.contains(&"#NextAction") {
+                    Some(SearchResult {
                     lable: text.to_string(),
                     tags: tags.into_iter().map(ToOwned::to_owned).collect(),
+                    path: path
+                        .to_str()
+                        .expect(
+                            "This only fails if you are doing something funky with path encodeings",
+                        )
+                        .to_owned(),
+                        //Rows are 0 indexed lines are 1 index
+                    lnum: start_point.row+1,
                 })
-            } else {
-                None
-            }
-        })
+                } else {
+                    None
+                }
+            },
+        )
         .collect()
 }
 
 #[test]
 fn get_next_actions() {
-    let results = find_next_actions(std::fs::File::open("test_files/test.md").unwrap());
+    let results = find_next_actions(&"test_files/test.md".into());
     assert_eq!(
         results,
         vec![
             SearchResult {
                 lable: "Simple task #NextAction".to_string(),
-                tags: vec!["#NextAction".to_string()]
+                tags: vec!["#NextAction".to_string()],
+                path: "test_files/test.md".to_string(),
+                lnum: 2
             },
             SearchResult {
                 lable: "Second task #NextAction #SecondTag".to_string(),
-                tags: vec!["#NextAction".to_string(), "#SecondTag".to_string()]
+                tags: vec!["#NextAction".to_string(), "#SecondTag".to_string()],
+                path: "test_files/test.md".to_string(),
+                lnum: 4
             }
         ]
     )
 }
 
+///Represents a tree for the inline parser
+struct InLineTree<'a> {
+    tree: Tree,
+    text: &'a str,
+    //The first line that the tree is on.
+    start_point: Point,
+}
+
 //TODO I am tempted to wrapp the tree type so I can't pass the wrong one.
-fn extract_headlines<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<(Tree, &'a str)> {
+fn extract_headlines<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLineTree<'a>> {
     let select_headlines = Query::new(
         &MD.into(),
         "[
@@ -79,19 +109,27 @@ fn extract_headlines<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<(Tree
             if select_headlines.capture_names()[cap.index as usize] == "heading.text" {
                 let node = cap.node;
                 let text = node.utf8_text(source.as_bytes()).unwrap();
+                let start_point = node.start_position();
+
                 let mut inline_parser = Parser::new();
                 inline_parser
                     .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
                     .unwrap();
-                let inline_tree = inline_parser.parse(text, None).unwrap();
-                results.push((inline_tree, text));
+                let tree = inline_parser.parse(text, None).unwrap();
+
+                results.push(InLineTree {
+                    tree,
+                    text,
+                    start_point,
+                });
             }
         }
     }
     results
 }
-fn extract_todos<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<(Tree, &'a str)> {
-    let select_headlines = Query::new(
+
+fn extract_todos<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLineTree<'a>> {
+    let select_todo = Query::new(
         &MD.into(),
         "
 (list_item
@@ -103,23 +141,28 @@ fn extract_todos<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<(Tree, &'
 ",
     )
     .unwrap();
-    /*
-     */
-
     let mut cursor = QueryCursor::new();
-    let mut headings = cursor.matches(&select_headlines, tree.root_node(), source.as_bytes());
+    let mut headings = cursor.matches(&select_todo, tree.root_node(), source.as_bytes());
     let mut results = vec![];
+
     while let Some(m) = headings.next() {
         for cap in m.captures {
-            if select_headlines.capture_names()[cap.index as usize] == "inline" {
+            if select_todo.capture_names()[cap.index as usize] == "inline" {
                 let node = cap.node;
                 let text = node.utf8_text(source.as_bytes()).unwrap();
+                let start_point = node.start_position();
+
                 let mut inline_parser = Parser::new();
                 inline_parser
                     .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
                     .unwrap();
-                let inline_tree = inline_parser.parse(text, None).unwrap();
-                results.push((inline_tree, text));
+                let tree = inline_parser.parse(text, None).unwrap();
+
+                results.push(InLineTree {
+                    tree,
+                    text,
+                    start_point,
+                });
             }
         }
     }
