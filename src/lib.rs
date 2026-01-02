@@ -1,13 +1,14 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use serde::Serialize;
 use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
     lable: String,
     tags: Vec<String>,
@@ -25,17 +26,17 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
     file.read_to_string(&mut source).unwrap();
     let tree = parser.parse(&source, None).unwrap();
 
-    extract_todos(&source, &tree)
-        .iter()
-        .filter_map(
-            |InLineTree {
-                 tree,
-                 text,
-                 start_point,
-             }| {
-                let tags = extract_tags(text, tree.root_node());
-                if tags.contains(&"#NextAction") {
-                    Some(SearchResult {
+    let mut cursor = QueryCursor::new();
+
+    let mut search_results = extract_todos(&source, &tree, &mut cursor).filter_map(
+        |InLineTree {
+             tree,
+             text,
+             start_point,
+         }| {
+            let tags = extract_tags(text, tree.root_node());
+            if tags.contains(&"#NextAction") {
+                Some(SearchResult {
                     lable: text.to_string(),
                     tags: tags.into_iter().map(ToOwned::to_owned).collect(),
                     path: path
@@ -44,15 +45,20 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
                             "This only fails if you are doing something funky with path encodeings",
                         )
                         .to_owned(),
-                        //Rows are 0 indexed lines are 1 index
-                    lnum: start_point.row+1,
+                    //Rows are 0 indexed lines are 1 index
+                    lnum: start_point.row + 1,
                 })
-                } else {
-                    None
-                }
-            },
-        )
-        .collect()
+            } else {
+                None
+            }
+        },
+    );
+    let mut result = vec![];
+    while let Some(x) = search_results.next() {
+        //TODO it would be kinda neat if I could make this never alloc.
+        result.push(x.clone());
+    }
+    result
 }
 
 #[test]
@@ -85,11 +91,18 @@ struct InLineTree<'a> {
     start_point: Point,
 }
 
-//TODO I am tempted to wrapp the tree type so I can't pass the wrong one.
-fn extract_headlines<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLineTree<'a>> {
-    let select_headlines = Query::new(
-        &MD.into(),
-        "[
+fn extract_headlines<'source, 'cursor, 'tree>(
+    source: &'source str,
+    tree: &'tree tree_sitter::Tree,
+    cursor: &'cursor mut QueryCursor,
+) -> impl StreamingIterator<Item = InLineTree<'source>> + use<'source, 'cursor>
+where
+    'tree: 'cursor,
+{
+    static SELECT_HEADLINES: LazyLock<Query> = LazyLock::new(|| {
+        Query::new(
+            &MD.into(),
+            "[
   (atx_heading
     (_) 
     (inline) @heading.text)
@@ -98,40 +111,27 @@ fn extract_headlines<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLin
     (paragraph (inline) @heading.text)
     (_))
 ]",
-    )
-    .unwrap();
+        )
+        .unwrap()
+    });
 
-    let mut cursor = QueryCursor::new();
-    let mut headings = cursor.matches(&select_headlines, tree.root_node(), source.as_bytes());
-    let mut results = vec![];
-    while let Some(m) = headings.next() {
-        for cap in m.captures {
-            if select_headlines.capture_names()[cap.index as usize] == "heading.text" {
-                let node = cap.node;
-                let text = node.utf8_text(source.as_bytes()).unwrap();
-                let start_point = node.start_position();
-
-                let mut inline_parser = Parser::new();
-                inline_parser
-                    .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
-                    .unwrap();
-                let tree = inline_parser.parse(text, None).unwrap();
-
-                results.push(InLineTree {
-                    tree,
-                    text,
-                    start_point,
-                });
-            }
-        }
-    }
-    results
+    cursor
+        .matches(&SELECT_HEADLINES, tree.root_node(), source.as_bytes())
+        .map(move |r#match| parse_inline_tree(source, r#match.captures[0].node))
 }
 
-fn extract_todos<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLineTree<'a>> {
-    let select_todo = Query::new(
-        &MD.into(),
-        "
+fn extract_todos<'source, 'cursor, 'tree>(
+    source: &'source str,
+    tree: &'tree tree_sitter::Tree,
+    cursor: &'cursor mut QueryCursor,
+) -> impl StreamingIterator<Item = InLineTree<'source>> + use<'source, 'cursor>
+where
+    'tree: 'cursor,
+{
+    static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
+        Query::new(
+            &MD.into(),
+            "
 (list_item
         (task_list_marker_unchecked)
             (paragraph
@@ -139,34 +139,29 @@ fn extract_todos<'a>(source: &'a str, tree: &tree_sitter::Tree) -> Vec<InLineTre
             )
 )
 ",
-    )
-    .unwrap();
-    let mut cursor = QueryCursor::new();
-    let mut headings = cursor.matches(&select_todo, tree.root_node(), source.as_bytes());
-    let mut results = vec![];
+        )
+        .unwrap()
+    });
+    cursor
+        .matches(&SELECT_TODO, tree.root_node(), source.as_bytes())
+        .map(move |r#match| parse_inline_tree(source, r#match.captures[0].node))
+}
 
-    while let Some(m) = headings.next() {
-        for cap in m.captures {
-            if select_todo.capture_names()[cap.index as usize] == "inline" {
-                let node = cap.node;
-                let text = node.utf8_text(source.as_bytes()).unwrap();
-                let start_point = node.start_position();
+fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLineTree<'a> {
+    let text = node.utf8_text(source.as_bytes()).unwrap();
+    let start_point = node.start_position();
 
-                let mut inline_parser = Parser::new();
-                inline_parser
-                    .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
-                    .unwrap();
-                let tree = inline_parser.parse(text, None).unwrap();
+    let mut inline_parser = Parser::new();
+    inline_parser
+        .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
+        .unwrap();
+    let tree = inline_parser.parse(text, None).unwrap();
 
-                results.push(InLineTree {
-                    tree,
-                    text,
-                    start_point,
-                });
-            }
-        }
+    InLineTree {
+        tree,
+        text,
+        start_point,
     }
-    results
 }
 
 fn extract_tags<'a>(text: &'a str, node: tree_sitter::Node<'_>) -> Vec<&'a str> {
