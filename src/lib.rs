@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::Read;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
@@ -10,7 +11,8 @@ use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
-    lable: String,
+    ordinal: String,
+    display: String,
     tags: Vec<String>,
     path: String,
     lnum: usize,
@@ -33,11 +35,13 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
              tree,
              text,
              start_point,
+             _phantom,
          }| {
             let tags = extract_tags(text, tree.root_node());
             if tags.contains(&"#NextAction") {
                 Some(SearchResult {
-                    lable: text.to_string(),
+                    display: text.split('\n').next().unwrap_or_default().to_string(),
+                    ordinal: text.to_string(),
                     tags: tags.into_iter().map(ToOwned::to_owned).collect(),
                     path: path
                         .to_str()
@@ -68,13 +72,13 @@ fn get_next_actions() {
         results,
         vec![
             SearchResult {
-                lable: "Simple task #NextAction".to_string(),
+                ordinal: "Simple task #NextAction".to_string(),
                 tags: vec!["#NextAction".to_string()],
                 path: "test_files/test.md".to_string(),
                 lnum: 2
             },
             SearchResult {
-                lable: "Second task #NextAction #SecondTag".to_string(),
+                ordinal: "Second task #NextAction #SecondTag".to_string(),
                 tags: vec!["#NextAction".to_string(), "#SecondTag".to_string()],
                 path: "test_files/test.md".to_string(),
                 lnum: 4
@@ -84,12 +88,20 @@ fn get_next_actions() {
 }
 
 ///Represents a tree for the inline parser
-struct InLineTree<'a> {
+struct MyTree<'a, T: TreeType> {
     tree: Tree,
     text: &'a str,
     //The first line that the tree is on.
     start_point: Point,
+    _phantom: PhantomData<T>,
 }
+trait TreeType {}
+struct Inline;
+struct Block;
+impl TreeType for Inline {}
+impl TreeType for Block {}
+
+type InLineTree<'a> = MyTree<'a, Inline>;
 
 fn extract_headlines<'source, 'cursor, 'tree>(
     source: &'source str,
@@ -161,6 +173,7 @@ fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLine
         tree,
         text,
         start_point,
+        _phantom: PhantomData::default(),
     }
 }
 
