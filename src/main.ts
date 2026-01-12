@@ -1,5 +1,6 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, Workspace } from 'obsidian';
+import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab } from "./settings";
 
 // Remember to rename these classes and interfaces!
 
@@ -8,6 +9,10 @@ export default class MyPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		this.registerView(
+			VIEW_TYPE_EXAMPLE,
+			(leaf) => new ExampleView(leaf)
+		);
 
 		// This creates an icon in the left ribbon.
 		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
@@ -32,7 +37,18 @@ export default class MyPlugin extends Plugin {
 			id: 'replace-selected',
 			name: 'Replace selected content',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
+				//editor.replaceSelection('Sample editor command');
+				this.activateView();
+				editor.scrollIntoView({
+					from: {
+						line: 0,
+						ch: 0
+					},
+					to: {
+						line: 0,
+						ch: 0
+					}
+				}, false)
 			}
 		});
 		// This adds a complex command that can check whether the current state of the app allows execution of the command
@@ -80,6 +96,25 @@ export default class MyPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	async get_leaf(workspace: Workspace): Promise<WorkspaceLeaf> {
+		const leaf = workspace.getLeavesOfType(VIEW_TYPE_EXAMPLE)[0];
+		// A leaf with our view already exists, use that
+		if (leaf) {
+			return leaf;
+		} else {
+			// Our view could not be found in the workspace, create a new leaf
+			// in the right sidebar for it
+			let leaf = workspace.getLeaf(true);
+			await leaf.setViewState({ type: VIEW_TYPE_EXAMPLE, active: true });
+			return leaf;
+		}
+	}
+	async activateView() {
+		const { workspace } = this.app;
+		// "Reveal" the leaf in case it is in a collapsed sidebar
+		workspace.revealLeaf(await this.get_leaf(workspace));
+	}
 }
 
 class SampleModal extends Modal {
@@ -88,12 +123,38 @@ class SampleModal extends Modal {
 	}
 
 	onOpen() {
-		let {contentEl} = this;
+		let { contentEl } = this;
 		contentEl.setText('Woah!');
 	}
 
 	onClose() {
-		const {contentEl} = this;
+		const { contentEl } = this;
 		contentEl.empty();
+	}
+}
+
+export const VIEW_TYPE_EXAMPLE = 'example-view';
+
+export class ExampleView extends ItemView {
+	constructor(leaf: WorkspaceLeaf) {
+		super(leaf);
+	}
+
+	getViewType() {
+		return VIEW_TYPE_EXAMPLE;
+	}
+
+	getDisplayText() {
+		return 'Example view';
+	}
+
+	async onOpen() {
+		const container = this.contentEl;
+		container.empty();
+		container.createEl('h4', { text: 'Example view' });
+	}
+
+	async onClose() {
+		// Nothing to clean up.
 	}
 }
