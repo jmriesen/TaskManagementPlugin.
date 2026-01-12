@@ -8,5 +8,5 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 tree-sitter = "0.26.3"
 # I want to use the tags feature
-# This requires compileing tree-sitter-markdown myself with some env variables set.
-tree-sitter-md = {path = "../tree-sitter-markdown/"}
+# This requires compiling tree-sitter-markdown myself with some env variables set.
+tree-sitter-md = {git= "http://myserver.home.arpa:3000/jriesen/tree-sitter-markdown.git"}

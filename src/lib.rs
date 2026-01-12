@@ -9,6 +9,8 @@ use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
+mod formatting;
+
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
     ordinal: String,
@@ -18,7 +20,7 @@ pub struct SearchResult {
     lnum: usize,
 }
 
-pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
+pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
     let mut parser = Parser::new();
     parser
         .set_language(&MD.into())
@@ -30,30 +32,38 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
 
     let mut cursor = QueryCursor::new();
 
-    let mut search_results = extract_todos(&source, &tree, &mut cursor).filter_map(
-        |InLineTree {
-             tree,
-             text,
-             start_point,
-             _phantom,
+    let mut search_results = extract_todos(&source, &tree, &mut cursor).map(
+        |ToDoEntry {
+             heading_tags,
+             task_tags,
+             body,
+             lnum,
          }| {
-            let tags = extract_tags(text, tree.root_node());
-            if tags.contains(&"#NextAction") {
-                Some(SearchResult {
-                    display: text.split('\n').next().unwrap_or_default().to_string(),
-                    ordinal: text.to_string(),
-                    tags: tags.into_iter().map(ToOwned::to_owned).collect(),
-                    path: path
-                        .to_str()
-                        .expect(
-                            "This only fails if you are doing something funky with path encodeings",
-                        )
-                        .to_owned(),
-                    //Rows are 0 indexed lines are 1 index
-                    lnum: start_point.row + 1,
-                })
-            } else {
-                None
+            let tags: Vec<_> = task_tags
+                .iter()
+                .chain(heading_tags)
+                .map(|x| x.to_string())
+                .collect();
+
+            let mut display = body
+                //Only display the first line up to the tags.
+                .split(['\n', '#'])
+                .next()
+                .unwrap_or_default()
+                .to_string();
+
+            let tag_string = tags.clone().join(" ");
+            display.push_str(&tag_string);
+
+            SearchResult {
+                ordinal: display.clone(),
+                display,
+                tags,
+                path: path
+                    .to_str()
+                    .expect("This only fails if you are doing something funky with path encodeings")
+                    .to_owned(),
+                lnum: *lnum,
             }
         },
     );
@@ -65,6 +75,13 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
     result
 }
 
+pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
+    find_todos(path)
+        .into_iter()
+        .filter(|x| x.tags.contains(&"#NextAction".into()))
+        .collect()
+}
+
 #[test]
 fn get_next_actions() {
     let results = find_next_actions(&"test_files/test.md".into());
@@ -72,12 +89,14 @@ fn get_next_actions() {
         results,
         vec![
             SearchResult {
+                display: "Simple task #NextAction".to_string(),
                 ordinal: "Simple task #NextAction".to_string(),
                 tags: vec!["#NextAction".to_string()],
                 path: "test_files/test.md".to_string(),
-                lnum: 2
+                lnum: 2,
             },
             SearchResult {
+                display: "Second task #NextAction #SecondTag".to_string(),
                 ordinal: "Second task #NextAction #SecondTag".to_string(),
                 tags: vec!["#NextAction".to_string(), "#SecondTag".to_string()],
                 path: "test_files/test.md".to_string(),
@@ -85,6 +104,19 @@ fn get_next_actions() {
             }
         ]
     )
+}
+
+#[test]
+fn get_heading_level_tags() {
+    let results = find_todos(&"test_files/heading_level_tags.md".into());
+    dbg!(&results);
+    assert_eq!(
+        results[0].tags,
+        vec!["#NextAction".to_string(), "#HeadingTag".to_string()]
+    );
+    assert_eq!(results[1].tags, vec!["#HeadingTag".to_string()]);
+    assert_eq!(results[2].tags, vec!["#NextAction".to_string(),]);
+    assert_eq!(results[3].tags, Vec::<String>::new());
 }
 
 ///Represents a tree for the inline parser
@@ -102,6 +134,26 @@ impl TreeType for Inline {}
 impl TreeType for Block {}
 
 type InLineTree<'a> = MyTree<'a, Inline>;
+
+impl<'a> InLineTree<'a> {
+    pub fn extract_tags(&self) -> Vec<&'a str> {
+        let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
+        let mut cursor = QueryCursor::new();
+
+        let mut matches = cursor.matches(select_tags, self.tree.root_node(), self.text.as_bytes());
+        let mut results = vec![];
+
+        while let Some(r#match) = matches.next() {
+            for cap in r#match.captures {
+                //Only one capture in the query so we don't need to check capture name.
+                let node = cap.node;
+                let text = node.utf8_text(self.text.as_bytes()).unwrap();
+                results.push(text);
+            }
+        }
+        results
+    }
+}
 
 fn extract_headlines<'source, 'cursor, 'tree>(
     source: &'source str,
@@ -132,11 +184,18 @@ where
         .map(move |r#match| parse_inline_tree(source, r#match.captures[0].node))
 }
 
+struct ToDoEntry<'a> {
+    heading_tags: Vec<&'a str>,
+    task_tags: Vec<&'a str>,
+    body: &'a str,
+    lnum: usize,
+}
+
 fn extract_todos<'source, 'cursor, 'tree>(
     source: &'source str,
     tree: &'tree tree_sitter::Tree,
     cursor: &'cursor mut QueryCursor,
-) -> impl StreamingIterator<Item = InLineTree<'source>> + use<'source, 'cursor>
+) -> impl StreamingIterator<Item = ToDoEntry<'source>> + use<'source, 'cursor>
 where
     'tree: 'cursor,
 {
@@ -144,19 +203,52 @@ where
         Query::new(
             &MD.into(),
             "
-(list_item
-        (task_list_marker_unchecked)
-            (paragraph
-              ((inline) @inline)
-            )
+(section
+(atx_heading 
+      (_) 
+        (inline) @heading.inline)
+    (list 
+        (list_item
+                (task_list_marker_unchecked)
+                    (paragraph
+                      ((inline) @task.inline)
+                    )
+        )
+    )
 )
 ",
         )
         .unwrap()
     });
+
     cursor
         .matches(&SELECT_TODO, tree.root_node(), source.as_bytes())
-        .map(move |r#match| parse_inline_tree(source, r#match.captures[0].node))
+        .map(move |r#match| {
+            //Come back and extract this.
+            let headline = r#match
+                .nodes_for_capture_index(
+                    SELECT_TODO
+                        .capture_index_for_name("heading.inline")
+                        .unwrap(),
+                )
+                .next()
+                .expect("expect exacly one node");
+            let task_nodes = r#match
+                .nodes_for_capture_index(SELECT_TODO.capture_index_for_name("task.inline").unwrap())
+                .next()
+                .expect("expect exacly one node");
+
+            let headline_tree = parse_inline_tree(source, headline);
+            let task_tree = parse_inline_tree(source, task_nodes);
+            SELECT_TODO.capture_names()[r#match.captures[0].index as usize];
+
+            ToDoEntry {
+                body: task_tree.text,
+                heading_tags: headline_tree.extract_tags(),
+                task_tags: task_tree.extract_tags(),
+                lnum: task_tree.start_point.row + 1,
+            }
+        })
 }
 
 fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLineTree<'a> {
@@ -175,72 +267,4 @@ fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLine
         start_point,
         _phantom: PhantomData::default(),
     }
-}
-
-fn extract_tags<'a>(text: &'a str, node: tree_sitter::Node<'_>) -> Vec<&'a str> {
-    let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
-    let mut cursor = QueryCursor::new();
-
-    let mut matches = cursor.matches(select_tags, node, text.as_bytes());
-    let mut results = vec![];
-
-    while let Some(r#match) = matches.next() {
-        for cap in r#match.captures {
-            //Only one capture in the query so we don't need to check capture name.
-            let node = cap.node;
-            let text = node.utf8_text(text.as_bytes()).unwrap();
-            results.push(text);
-        }
-    }
-    results
-}
-
-//TODO: Figure out how to simplify this llm generated code.
-//It does work.
-pub fn pretty_print_sexpr(input: &str) -> String {
-    let mut out = String::new();
-    let mut indent = 0usize;
-    let mut token = String::new();
-
-    let push_token = |out: &mut String, token: &mut String, indent: usize| {
-        if !token.trim().is_empty() {
-            out.push_str(&"  ".repeat(indent));
-            out.push_str(token.trim());
-            out.push('\n');
-            token.clear();
-        }
-    };
-
-    for c in input.chars() {
-        match c {
-            '(' => {
-                push_token(&mut out, &mut token, indent);
-                out.push_str(&"  ".repeat(indent));
-                out.push('(');
-                out.push('\n');
-                indent += 1;
-            }
-            ')' => {
-                push_token(&mut out, &mut token, indent);
-                indent = indent.saturating_sub(1);
-                out.push_str(&"  ".repeat(indent));
-                out.push(')');
-                out.push('\n');
-            }
-            c if c.is_whitespace() => {
-                // finalize token on whitespace
-                push_token(&mut out, &mut token, indent);
-            }
-            _ => token.push(c),
-        }
-    }
-
-    // flush last token
-    if !token.trim().is_empty() {
-        out.push_str(&"  ".repeat(indent));
-        out.push_str(token.trim());
-        out.push('\n');
-    }
-
-    out
 }
