@@ -1,21 +1,31 @@
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use search::find_todos;
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    dir_path: PathBuf,
+
+    #[arg(short, long)]
+    include: Vec<String>,
+
+    #[arg(short, long)]
+    exclude: Vec<String>,
+}
+
 fn main() {
-    let mut args = env::args();
-    let _program_name = args.next();
+    let mut cli = Cli::parse();
+    cli.include.iter_mut().for_each(|i| i.insert(0, '#'));
+    cli.exclude.iter_mut().for_each(|i| i.insert(0, '#'));
 
-    let dir_name = args.next().expect("You must pass in a file to search");
-    let dir_path = &PathBuf::from(dir_name.as_str());
-
-    let results: Vec<_> = find_paths(dir_path)
+    let results: Vec<_> = find_paths(&cli.dir_path)
         .iter()
         .map(|x| find_todos(x))
         .flatten()
+        .filter(|x| cli.include.iter().any(|y| x.tags.contains(y)))
+        .filter(|x| cli.exclude.iter().all(|y| !x.tags.contains(y)))
         .collect();
     print!(
         "{}",

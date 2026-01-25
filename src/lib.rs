@@ -13,11 +13,11 @@ mod formatting;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
-    ordinal: String,
-    display: String,
-    tags: Vec<String>,
-    path: String,
-    lnum: usize,
+    pub ordinal: String,
+    pub display: String,
+    pub tags: Vec<String>,
+    pub path: String,
+    pub lnum: usize,
 }
 
 pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
