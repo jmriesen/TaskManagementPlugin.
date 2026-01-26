@@ -8,23 +8,34 @@ use search::find_todos;
 struct Cli {
     dir_path: PathBuf,
 
+    /// All of these
     #[arg(short, long)]
     include: Vec<String>,
 
+    // At least one of these
+    #[arg(short, long)]
+    any: Vec<String>,
+
+    // None of these
     #[arg(short, long)]
     exclude: Vec<String>,
 }
 
 fn main() {
     let mut cli = Cli::parse();
-    cli.include.iter_mut().for_each(|i| i.insert(0, '#'));
-    cli.exclude.iter_mut().for_each(|i| i.insert(0, '#'));
+    let add_leading_hash = |tags: &mut Vec<String>| {
+        tags.iter_mut().for_each(|i| i.insert(0, '#'));
+    };
+    add_leading_hash(&mut cli.include);
+    add_leading_hash(&mut cli.any);
+    add_leading_hash(&mut cli.exclude);
 
     let results: Vec<_> = find_paths(&cli.dir_path)
         .iter()
         .map(|x| find_todos(x))
         .flatten()
-        .filter(|x| cli.include.iter().any(|y| x.tags.contains(y)))
+        .filter(|x| cli.include.is_empty() || cli.include.iter().all(|y| x.tags.contains(y)))
+        .filter(|x| cli.any.is_empty() || cli.any.iter().any(|y| x.tags.contains(y)))
         .filter(|x| cli.exclude.iter().all(|y| !x.tags.contains(y)))
         .collect();
     print!(
