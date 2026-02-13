@@ -1,8 +1,7 @@
 export interface ExcerptDirective {
 	filePath: string;
-	heading?: string;
-	lineStart?: number;
-	lineEnd?: number;
+	lineStart: number;
+	lineEnd: number;
 }
 
 export interface ExcerptResult {

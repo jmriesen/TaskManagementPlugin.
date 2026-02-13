@@ -16,26 +16,28 @@ export function parseExcerptDirective(source: string): ExcerptDirective {
 	if (!filePath) {
 		throw new ExcerptError("Missing required 'file' field in excerpt directive");
 	}
+	const lines_param = fields["lines"];
+	if (!lines_param) {
+		throw new ExcerptError("Missing required 'lines' field in excerpt directive");
+	}
 
+	const rangeMatch = lines_param.match(/^(\d+)\s*-\s*(\d+)$/);
+	if (!rangeMatch) {
+		throw new ExcerptError("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')");
+	}
+
+	const lineStart = parseInt(rangeMatch[1]!, 10);
+	const lineEnd = parseInt(rangeMatch[2]!, 10);
+	if (lineStart > lineEnd) {
+		throw new ExcerptError("Line start must be less than or equal to line end");
+	}
 	const directive: ExcerptDirective = {
 		filePath,
+		lineStart,
+		lineEnd
 	};
 
-	if (fields["heading"]) {
-		directive.heading = fields["heading"];
-	}
 
-	if (fields["lines"]) {
-		const rangeMatch = fields["lines"].match(/^(\d+)\s*-\s*(\d+)$/);
-		if (!rangeMatch) {
-			throw new ExcerptError("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')");
-		}
-		directive.lineStart = parseInt(rangeMatch[1]!, 10);
-		directive.lineEnd = parseInt(rangeMatch[2]!, 10);
-		if (directive.lineStart > directive.lineEnd) {
-			throw new ExcerptError("Line start must be less than or equal to line end");
-		}
-	}
 
 	return directive;
 }
