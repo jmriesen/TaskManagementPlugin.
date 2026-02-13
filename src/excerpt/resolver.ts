@@ -1,12 +1,13 @@
 import { App, TFile } from "obsidian";
 import { readFile } from "fs/promises";
 import { ExcerptDirective, ExcerptError, ExcerptResult } from "./types";
+import { isAbsolute } from "path";
 
 export async function resolveFileContent(
 	app: App,
 	directive: ExcerptDirective
 ): Promise<ExcerptResult> {
-	if (directive.isAbsolutePath) {
+	if (isAbsolute(directive.filePath)) {
 		return resolveAbsolutePath(directive);
 	}
 	return resolveVaultPath(app, directive);

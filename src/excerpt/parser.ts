@@ -19,7 +19,6 @@ export function parseExcerptDirective(source: string): ExcerptDirective {
 
 	const directive: ExcerptDirective = {
 		filePath,
-		isAbsolutePath: isAbsolute(filePath),
 	};
 
 	if (fields["heading"]) {

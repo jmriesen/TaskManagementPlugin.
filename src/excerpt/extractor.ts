@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { ExcerptDirective, ExcerptError, ExcerptResult } from "./types";
+import { isAbsolute } from "path";
 
 export function extractContent(
 	app: App,
@@ -22,7 +23,7 @@ function extractByHeading(
 	sourcePath: string,
 	directive: ExcerptDirective
 ): ExcerptResult {
-	if (!directive.isAbsolutePath) {
+	if (!isAbsolute(directive.filePath)) {
 		const file = app.vault.getAbstractFileByPath(sourcePath);
 		if (file instanceof TFile) {
 			const cache = app.metadataCache.getFileCache(file);

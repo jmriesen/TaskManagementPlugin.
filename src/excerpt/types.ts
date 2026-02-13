@@ -1,6 +1,5 @@
 export interface ExcerptDirective {
 	filePath: string;
-	isAbsolutePath: boolean;
 	heading?: string;
 	lineStart?: number;
 	lineEnd?: number;
