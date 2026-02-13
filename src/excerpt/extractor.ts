@@ -1,6 +1,5 @@
-import { App, TFile } from "obsidian";
+import { App, } from "obsidian";
 import { ExcerptDirective, ExcerptError, ExcerptResult } from "./types";
-import { isAbsolute } from "path";
 
 export function extractContent(
 	app: App,
@@ -9,8 +8,8 @@ export function extractContent(
 	directive: ExcerptDirective
 ): ExcerptResult {
 	const lines = fullContent.split("\n");
-	const start = directive.lineStart! - 1; // Convert 1-based to 0-based
-	const end = directive.lineEnd!;
+	const start = directive.lineStart - 1; // Convert 1-based to 0-based
+	const end = directive.lineEnd;
 
 	if (start < 0 || end > lines.length) {
 		throw new ExcerptError(

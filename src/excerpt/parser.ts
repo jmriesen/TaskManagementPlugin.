@@ -1,5 +1,4 @@
 import { ExcerptDirective, ExcerptError } from "./types";
-import { isAbsolute } from "path";
 
 export function parseExcerptDirective(source: string): ExcerptDirective {
 	const lines = source.trim().split("\n");

@@ -1,13 +1,13 @@
 import { Plugin } from 'obsidian';
-import { DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, TaskManagementSettings, SettingTab } from "./settings";
 import { registerExcerptProcessor } from "./excerpt/processor";
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class TaskManagment extends Plugin {
+	settings: TaskManagementSettings;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new SettingTab(this.app, this));
 		registerExcerptProcessor(this);
 	}
 
@@ -15,7 +15,7 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<TaskManagementSettings>);
 	}
 
 	async saveSettings() {
