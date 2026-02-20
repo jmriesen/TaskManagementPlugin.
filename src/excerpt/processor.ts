@@ -1,5 +1,5 @@
 import { MarkdownRenderChild, Plugin, TFile } from "obsidian";
-import { parseExcerptDirective, extractContent } from "../../task-management-core/pkg/task_management_core";
+import { parseExcerptDirective, extractContent } from "../../task-management-bindings/pkg/task_management_bindings";
 import { resolveFileContent } from "./resolver";
 import { renderExcerpt, renderExcerptError } from "./renderer";
 import { openExcerptInEditor } from "./editor";

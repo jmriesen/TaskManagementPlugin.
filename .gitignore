@@ -22,5 +22,5 @@ data.json
 .DS_Store
 
 # Rust / wasm-pack
-task-management-core/target/
-task-management-core/pkg/
+*/target/
+*/pkg/

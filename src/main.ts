@@ -1,14 +1,14 @@
 import { Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, TaskManagementSettings, SettingTab } from "./settings";
 import { registerExcerptProcessor } from "./excerpt/processor";
-import wasmBinary from '../task-management-core/pkg/task_management_core_bg.wasm';
-import * as wasmNamespace from '../task-management-core/pkg/task_management_core';
+import wasmBinary from '../task-management-bindings/pkg/task_management_bindings_bg.wasm';
+import * as wasmNamespace from '../task-management-bindings/pkg/task_management_bindings';
 
 export default class TaskManagment extends Plugin {
 	settings: TaskManagementSettings;
 
 	async onload() {
-		const wasmModule = await import('../task-management-core/pkg/task_management_core.js')
+		const wasmModule = await import('../task-management-bindings/pkg/task_management_bindings.js')
 		wasmModule.initSync(wasmBinary);
 		await this.loadSettings();
 		this.addSettingTab(new SettingTab(this.app, this));

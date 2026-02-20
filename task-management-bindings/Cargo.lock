@@ -56,7 +56,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "task-management-core"
+name = "task-management-bindings"
 version = "0.1.0"
 dependencies = [
  "wasm-bindgen",
