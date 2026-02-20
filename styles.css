@@ -1,0 +1,39 @@
+.excerpt-embed {
+	position: relative;
+	border-left: 3px solid var(--interactive-accent);
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+	padding: 8px 12px;
+	margin: 4px 0;
+}
+
+.excerpt-embed-edit-btn {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	opacity: 0;
+	cursor: pointer;
+	background: var(--background-modifier-hover);
+	border: none;
+	border-radius: 4px;
+	padding: 4px;
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity 100ms ease-in-out;
+}
+
+.excerpt-embed:hover .excerpt-embed-edit-btn {
+	opacity: 1;
+}
+
+.excerpt-embed-edit-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-active-hover);
+}
+
+.excerpt-embed-error {
+	border-left-color: var(--text-error);
+	color: var(--text-error);
+}
