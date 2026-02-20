@@ -1,11 +1,6 @@
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub fn foo() -> String {
-    "asdflasdfasdfa".to_string()
-}
-
-#[wasm_bindgen]
 pub struct ExcerptDirective {
     file_path: String,
     line_start: usize,
@@ -59,14 +54,12 @@ pub fn parse_excerpt_directive(source: &str) -> Result<ExcerptDirective, JsValue
         ));
     }
 
-    let line_start = parts[0]
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| JsValue::from_str("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')"))?;
-    let line_end = parts[1]
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| JsValue::from_str("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')"))?;
+    let line_start = parts[0].trim().parse::<usize>().map_err(|_| {
+        JsValue::from_str("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')")
+    })?;
+    let line_end = parts[1].trim().parse::<usize>().map_err(|_| {
+        JsValue::from_str("Invalid 'lines' format. Expected 'start-end' (e.g., '10-25')")
+    })?;
 
     if line_start > line_end {
         return Err(JsValue::from_str(
@@ -82,18 +75,11 @@ pub fn parse_excerpt_directive(source: &str) -> Result<ExcerptDirective, JsValue
 }
 
 #[wasm_bindgen(js_name = extractContent)]
-pub fn extract_content(full_content: &str, line_start: usize, line_end: usize) -> Result<String, JsValue> {
-    let lines: Vec<&str> = full_content.split('\n').collect();
-    let start = line_start.checked_sub(1).ok_or_else(|| {
-        JsValue::from_str("Line start must be at least 1")
-    })?;
-
-    if start > lines.len() || line_end > lines.len() {
-        return Err(JsValue::from_str(&format!(
-            "Line range {}-{} out of bounds (file has {} lines)",
-            line_start, line_end, lines.len()
-        )));
-    }
-
-    Ok(lines[start..line_end].join("\n"))
+pub fn extract_content(full_content: &str, line_start: usize, line_end: usize) -> String {
+    full_content
+        .lines()
+        .skip(line_start)
+        .take(line_end - line_start)
+        .collect::<Vec<_>>()[..]
+        .join("\n")
 }
