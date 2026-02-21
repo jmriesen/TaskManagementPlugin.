@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use serde::Serialize;
 use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
-use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
+//use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
 mod formatting;
 
@@ -23,7 +23,7 @@ pub struct SearchResult {
 pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
     let mut parser = Parser::new();
     parser
-        .set_language(&MD.into())
+        .set_language(todo!())
         .expect("Error loading Markdown inline grammar");
     let mut source = String::new();
     let mut file = File::open(path).expect("error opening file");
@@ -137,7 +137,7 @@ type InLineTree<'a> = MyTree<'a, Inline>;
 
 impl<'a> InLineTree<'a> {
     pub fn extract_tags(&self) -> Vec<&'a str> {
-        let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
+        let select_tags = &Query::new(todo!(), "(tag) @text").unwrap();
         let mut cursor = QueryCursor::new();
 
         let mut matches = cursor.matches(select_tags, self.tree.root_node(), self.text.as_bytes());
@@ -165,7 +165,7 @@ where
 {
     static SELECT_HEADLINES: LazyLock<Query> = LazyLock::new(|| {
         Query::new(
-            &MD.into(),
+            todo!(),
             "[
   (atx_heading
     (_) 
@@ -201,7 +201,7 @@ where
 {
     static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
         Query::new(
-            &MD.into(),
+            todo!(),
             "
 (section
 (atx_heading 
@@ -256,9 +256,7 @@ fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLine
     let start_point = node.start_position();
 
     let mut inline_parser = Parser::new();
-    inline_parser
-        .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
-        .unwrap();
+    inline_parser.set_language(todo!()).unwrap();
     let tree = inline_parser.parse(text, None).unwrap();
 
     InLineTree {

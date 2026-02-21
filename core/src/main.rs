@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use search::find_todos;
+use core::find_todos;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

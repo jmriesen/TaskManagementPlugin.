@@ -1,5 +1,5 @@
 [package]
-name = "search"
+name = "core"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,8 +7,5 @@ edition = "2024"
 clap = { version = "4.5.54", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
-tree-sitter = "0.26.3"
-# I want to use the tags feature
-# This requires compiling tree-sitter-markdown myself with some env variables set.
-#tree-sitter-md = {path= "../tree-sitter-markdown/"}
-tree-sitter-md = {git= "ssh://gitea:2222/jriesen/tree-sitter-markdown.git"}
+tree-sitter = {version= "0.26.3",feature= ["wasm"]}
+#tree-sitter-md = {git= "ssh://gitea:2222/jriesen/tree-sitter-markdown.git"}
