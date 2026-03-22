@@ -59,29 +59,20 @@ impl<'a> BlockTree<'a> {
         cursor
             .matches(&SELECT_TODO, self.tree.root_node(), source.as_bytes())
             .map(move |r#match| {
-                //Come back and extract this.
-                let headline = r#match
-                    .nodes_for_capture_index(
-                        SELECT_TODO
-                            .capture_index_for_name("heading.inline")
-                            .unwrap(),
-                    )
-                    .next()
-                    .expect("expect exacly one node");
-                let task_nodes = r#match
-                    .nodes_for_capture_index(
-                        SELECT_TODO.capture_index_for_name("task.inline").unwrap(),
-                    )
-                    .next()
-                    .expect("expect exacly one node");
-
-                let headline_tree = InLineTree::parse(source, headline);
-                let task_tree = InLineTree::parse(source, task_nodes);
+                let extract = |id| {
+                    let node = r#match
+                        .nodes_for_capture_index(SELECT_TODO.capture_index_for_name(id).unwrap())
+                        .next()
+                        .expect("expect exacly one node");
+                    InLineTree::parse(source, node)
+                };
+                let headline = extract("heading.inline");
+                let task_tree = extract("task.inline");
                 SELECT_TODO.capture_names()[r#match.captures[0].index as usize];
 
                 ToDoEntry {
                     body: task_tree.text,
-                    heading_tags: headline_tree.extract_tags(),
+                    heading_tags: headline.extract_tags(),
                     task_tags: task_tree.extract_tags(),
                     lnum: task_tree.start_point.row + 1,
                 }
