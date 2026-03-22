@@ -14,7 +14,9 @@ use crate::inline::InLineTree;
 
 mod block;
 mod formatting;
+mod helper;
 mod inline;
+use helper::StreamingIteratorExt;
 
 ///Represents a tree for the inline parser
 struct MyTree<'a, T: TreeType> {
@@ -26,6 +28,13 @@ struct MyTree<'a, T: TreeType> {
 }
 trait TreeType {}
 
+struct ToDoEntry<'a> {
+    heading_tags: Vec<&'a str>,
+    task_tags: Vec<&'a str>,
+    body: &'a str,
+    lnum: usize,
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
     pub ordinal: String,
@@ -33,6 +42,45 @@ pub struct SearchResult {
     pub tags: Vec<String>,
     pub path: String,
     pub lnum: usize,
+}
+
+impl SearchResult {
+    fn new(
+        ToDoEntry {
+            heading_tags,
+            task_tags,
+            body,
+            lnum,
+        }: &ToDoEntry,
+        path: &PathBuf,
+    ) -> Self {
+        let tags: Vec<_> = task_tags
+            .iter()
+            .chain(heading_tags)
+            .map(|x| x.to_string())
+            .collect();
+
+        let mut display = body
+            //Only display the first line up to the tags.
+            .split(['\n', '#'])
+            .next()
+            .unwrap_or_default()
+            .to_string();
+
+        let tag_string = tags.clone().join(" ");
+        display.push_str(&tag_string);
+
+        SearchResult {
+            ordinal: display.clone(),
+            display,
+            tags,
+            path: path
+                .to_str()
+                .expect("This only fails if you are doing something funky with path encodeings")
+                .to_owned(),
+            lnum: *lnum,
+        }
+    }
 }
 
 pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
@@ -44,47 +92,9 @@ pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
 
     let mut cursor = QueryCursor::new();
 
-    let mut search_results = tree.extract_todos(&source, &mut cursor).map(
-        |ToDoEntry {
-             heading_tags,
-             task_tags,
-             body,
-             lnum,
-         }| {
-            let tags: Vec<_> = task_tags
-                .iter()
-                .chain(heading_tags)
-                .map(|x| x.to_string())
-                .collect();
-
-            let mut display = body
-                //Only display the first line up to the tags.
-                .split(['\n', '#'])
-                .next()
-                .unwrap_or_default()
-                .to_string();
-
-            let tag_string = tags.clone().join(" ");
-            display.push_str(&tag_string);
-
-            SearchResult {
-                ordinal: display.clone(),
-                display,
-                tags,
-                path: path
-                    .to_str()
-                    .expect("This only fails if you are doing something funky with path encodeings")
-                    .to_owned(),
-                lnum: *lnum,
-            }
-        },
-    );
-    let mut result = vec![];
-    while let Some(x) = search_results.next() {
-        //TODO it would be kinda neat if I could make this never alloc.
-        result.push(x.clone());
-    }
-    result
+    tree.todos(&source, &mut cursor)
+        .map(|x| SearchResult::new(x, path))
+        .collect()
 }
 
 pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
@@ -158,11 +168,4 @@ where
     cursor
         .matches(&SELECT_HEADLINES, tree.root_node(), source.as_bytes())
         .map(move |r#match| InLineTree::parse(source, r#match.captures[0].node))
-}
-
-struct ToDoEntry<'a> {
-    heading_tags: Vec<&'a str>,
-    task_tags: Vec<&'a str>,
-    body: &'a str,
-    lnum: usize,
 }

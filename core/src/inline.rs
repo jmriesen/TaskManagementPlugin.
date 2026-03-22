@@ -27,7 +27,7 @@ impl<'a> InLineTree<'a> {
         }
     }
 
-    pub fn extract_tags(&self) -> Vec<&'a str> {
+    pub fn tags(&self) -> Vec<&'a str> {
         let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
         let mut cursor = QueryCursor::new();
 

@@ -26,7 +26,7 @@ impl<'a> BlockTree<'a> {
             _phantom: PhantomData::default(),
         }
     }
-    pub fn extract_todos<'source, 'cursor, 'tree>(
+    pub fn todos<'source, 'cursor, 'tree>(
         &'tree self,
         source: &'source str,
         cursor: &'cursor mut QueryCursor,
@@ -68,12 +68,11 @@ impl<'a> BlockTree<'a> {
                 };
                 let headline = extract("heading.inline");
                 let task_tree = extract("task.inline");
-                SELECT_TODO.capture_names()[r#match.captures[0].index as usize];
 
                 ToDoEntry {
                     body: task_tree.text,
-                    heading_tags: headline.extract_tags(),
-                    task_tags: task_tree.extract_tags(),
+                    heading_tags: headline.tags(),
+                    task_tags: task_tree.tags(),
                     lnum: task_tree.start_point.row + 1,
                 }
             })
