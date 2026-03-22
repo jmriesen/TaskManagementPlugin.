@@ -5,14 +5,26 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use serde::Serialize;
-use tree_sitter::{Parser, Point, StreamingIterator, Tree};
+use tree_sitter::{Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
-use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
+use tree_sitter_md::LANGUAGE as MD;
 
+use crate::block::BlockTree;
 use crate::inline::InLineTree;
 
+mod block;
 mod formatting;
 mod inline;
+
+///Represents a tree for the inline parser
+struct MyTree<'a, T: TreeType> {
+    tree: Tree,
+    text: &'a str,
+    //The first line that the tree is on.
+    start_point: Point,
+    _phantom: PhantomData<T>,
+}
+trait TreeType {}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
@@ -24,18 +36,15 @@ pub struct SearchResult {
 }
 
 pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&MD.into())
-        .expect("Error loading Markdown inline grammar");
     let mut source = String::new();
     let mut file = File::open(path).expect("error opening file");
     file.read_to_string(&mut source).unwrap();
-    let tree = parser.parse(&source, None).unwrap();
+
+    let tree = BlockTree::parse(&source);
 
     let mut cursor = QueryCursor::new();
 
-    let mut search_results = extract_todos(&source, &tree, &mut cursor).map(
+    let mut search_results = tree.extract_todos(&source, &mut cursor).map(
         |ToDoEntry {
              heading_tags,
              task_tags,
@@ -122,18 +131,6 @@ fn get_heading_level_tags() {
     assert_eq!(results[3].tags, Vec::<String>::new());
 }
 
-///Represents a tree for the inline parser
-struct MyTree<'a, T: TreeType> {
-    tree: Tree,
-    text: &'a str,
-    //The first line that the tree is on.
-    start_point: Point,
-    _phantom: PhantomData<T>,
-}
-trait TreeType {}
-struct Block;
-impl TreeType for Block {}
-
 fn extract_headlines<'source, 'cursor, 'tree>(
     source: &'source str,
     tree: &'tree tree_sitter::Tree,
@@ -168,64 +165,4 @@ struct ToDoEntry<'a> {
     task_tags: Vec<&'a str>,
     body: &'a str,
     lnum: usize,
-}
-
-fn extract_todos<'source, 'cursor, 'tree>(
-    source: &'source str,
-    tree: &'tree tree_sitter::Tree,
-    cursor: &'cursor mut QueryCursor,
-) -> impl StreamingIterator<Item = ToDoEntry<'source>> + use<'source, 'cursor>
-where
-    'tree: 'cursor,
-{
-    static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
-        Query::new(
-            &MD.into(),
-            "
-(section
-(atx_heading 
-      (_) 
-        (inline) @heading.inline)
-    (list 
-        (list_item
-                (task_list_marker_unchecked)
-                    (paragraph
-                      ((inline) @task.inline)
-                    )
-        )
-    )
-)
-",
-        )
-        .unwrap()
-    });
-
-    cursor
-        .matches(&SELECT_TODO, tree.root_node(), source.as_bytes())
-        .map(move |r#match| {
-            //Come back and extract this.
-            let headline = r#match
-                .nodes_for_capture_index(
-                    SELECT_TODO
-                        .capture_index_for_name("heading.inline")
-                        .unwrap(),
-                )
-                .next()
-                .expect("expect exacly one node");
-            let task_nodes = r#match
-                .nodes_for_capture_index(SELECT_TODO.capture_index_for_name("task.inline").unwrap())
-                .next()
-                .expect("expect exacly one node");
-
-            let headline_tree = InLineTree::parse(source, headline);
-            let task_tree = InLineTree::parse(source, task_nodes);
-            SELECT_TODO.capture_names()[r#match.captures[0].index as usize];
-
-            ToDoEntry {
-                body: task_tree.text,
-                heading_tags: headline_tree.extract_tags(),
-                task_tags: task_tree.extract_tags(),
-                lnum: task_tree.start_point.row + 1,
-            }
-        })
 }
