@@ -7,9 +7,8 @@ use std::sync::LazyLock;
 use serde::Serialize;
 use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
-//use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
+use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
-/*
 mod formatting;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
@@ -267,4 +266,3 @@ fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLine
         _phantom: PhantomData::default(),
     }
 }
-*/
