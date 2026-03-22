@@ -9,7 +9,10 @@ use tree_sitter::{Parser, Point, StreamingIterator, Tree};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::{INLINE_LANGUAGE, LANGUAGE as MD};
 
+use crate::inline::InLineTree;
+
 mod formatting;
+mod inline;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub struct SearchResult {
@@ -128,32 +131,8 @@ struct MyTree<'a, T: TreeType> {
     _phantom: PhantomData<T>,
 }
 trait TreeType {}
-struct Inline;
 struct Block;
-impl TreeType for Inline {}
 impl TreeType for Block {}
-
-type InLineTree<'a> = MyTree<'a, Inline>;
-
-impl<'a> InLineTree<'a> {
-    pub fn extract_tags(&self) -> Vec<&'a str> {
-        let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
-        let mut cursor = QueryCursor::new();
-
-        let mut matches = cursor.matches(select_tags, self.tree.root_node(), self.text.as_bytes());
-        let mut results = vec![];
-
-        while let Some(r#match) = matches.next() {
-            for cap in r#match.captures {
-                //Only one capture in the query so we don't need to check capture name.
-                let node = cap.node;
-                let text = node.utf8_text(self.text.as_bytes()).unwrap();
-                results.push(text);
-            }
-        }
-        results
-    }
-}
 
 fn extract_headlines<'source, 'cursor, 'tree>(
     source: &'source str,
@@ -181,7 +160,7 @@ where
 
     cursor
         .matches(&SELECT_HEADLINES, tree.root_node(), source.as_bytes())
-        .map(move |r#match| parse_inline_tree(source, r#match.captures[0].node))
+        .map(move |r#match| InLineTree::parse(source, r#match.captures[0].node))
 }
 
 struct ToDoEntry<'a> {
@@ -238,8 +217,8 @@ where
                 .next()
                 .expect("expect exacly one node");
 
-            let headline_tree = parse_inline_tree(source, headline);
-            let task_tree = parse_inline_tree(source, task_nodes);
+            let headline_tree = InLineTree::parse(source, headline);
+            let task_tree = InLineTree::parse(source, task_nodes);
             SELECT_TODO.capture_names()[r#match.captures[0].index as usize];
 
             ToDoEntry {
@@ -249,20 +228,4 @@ where
                 lnum: task_tree.start_point.row + 1,
             }
         })
-}
-
-fn parse_inline_tree<'a>(source: &'a str, node: tree_sitter::Node<'_>) -> InLineTree<'a> {
-    let text = node.utf8_text(source.as_bytes()).unwrap();
-    let start_point = node.start_position();
-
-    let mut inline_parser = Parser::new();
-    inline_parser.set_language(&INLINE_LANGUAGE.into()).unwrap();
-    let tree = inline_parser.parse(text, None).unwrap();
-
-    InLineTree {
-        tree,
-        text,
-        start_point,
-        _phantom: PhantomData::default(),
-    }
 }
