@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //TODO: Figure out how to simplify this llm generated code.
 //It does work.
 pub fn pretty_print_sexpr(input: &str) -> String {
