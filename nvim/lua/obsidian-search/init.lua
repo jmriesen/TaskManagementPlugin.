@@ -36,8 +36,7 @@ function M.search_tasks(opts)
 	local conf = require("telescope.config").values
 
 	opts = opts or {}
-	local command = { vim.fs.abspath(M.config.search_binary) }
-	table.insert(command, vim.fs.abspath(M.config.vault_path))
+	local command = { vim.fn.expand(M.config.search_binary), "todos", vim.fn.expand(M.config.vault_path) }
 
 	if opts.include then
 		for _, tag in ipairs(opts.include) do
@@ -60,10 +59,11 @@ function M.search_tasks(opts)
 		end
 	end
 
-	local command_and_args = table.concat(command, " ")
-	-- vim.print("obsidian-search command: " .. command_and_args)
-	local raw = vim.fn.system(command_and_args)
-	-- vim.print("obsidian-search response: " .. raw)
+	local raw = vim.fn.system(command)
+	if vim.v.shell_error ~= 0 then
+		vim.notify("obsidian-search todos failed:\n" .. raw, vim.log.levels.ERROR)
+		return
+	end
 	local response = vim.json.decode(raw)
 
 	pickers
@@ -74,7 +74,6 @@ function M.search_tasks(opts)
 				entry_maker = function(entry)
 					return {
 						value = entry,
-						-- Newlines in display crash the cursor position
 						display = entry.display,
 						ordinal = entry.ordinal,
 						path = entry.path,
@@ -84,6 +83,96 @@ function M.search_tasks(opts)
 			}),
 			previewer = conf.grep_previewer(opts),
 			sorter = conf.generic_sorter(opts),
+		})
+		:find()
+end
+
+function M.requires(opts)
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local previewers = require("telescope.previewers")
+	local conf = require("telescope.config").values
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+
+	opts = opts or {}
+
+	local binary = vim.fn.expand(M.config.search_binary)
+	local vault = vim.fn.expand(M.config.vault_path)
+	local raw = vim.fn.system({ binary, "requires", vault })
+	if vim.v.shell_error ~= 0 then
+		vim.notify("obsidian-search requires failed:\n" .. raw, vim.log.levels.ERROR)
+		return
+	end
+	local by_person = vim.json.decode(raw)
+
+	-- Build a flat list of { person, tasks } sorted by person name
+	local people = {}
+	for person, tasks in pairs(by_person) do
+		table.insert(people, { person = person, tasks = tasks })
+	end
+	table.sort(people, function(a, b)
+		return a.person < b.person
+	end)
+
+	-- Preview: show all tasks for a person as plain text
+	local person_previewer = previewers.new_buffer_previewer({
+		title = "Tasks",
+		define_preview = function(self, entry)
+			local lines = {}
+			for _, task in ipairs(entry.value.tasks) do
+				table.insert(lines, task.display)
+				table.insert(lines, "  " .. task.path .. ":" .. task.lnum)
+				table.insert(lines, "")
+			end
+			vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
+		end,
+	})
+
+	pickers
+		.new(opts, {
+			prompt_title = "Requires — People",
+			finder = finders.new_table({
+				results = people,
+				entry_maker = function(entry)
+					return {
+						value = entry,
+						display = entry.person .. " (" .. #entry.tasks .. ")",
+						ordinal = entry.person,
+					}
+				end,
+			}),
+			previewer = person_previewer,
+			sorter = conf.generic_sorter(opts),
+			attach_mappings = function(bufnr, _)
+				actions.select_default:replace(function()
+					actions.close(bufnr)
+					local selection = action_state.get_selected_entry()
+					local tasks = selection.value.tasks
+					local person = selection.value.person
+
+					pickers
+						.new(opts, {
+							prompt_title = "Requires — " .. person,
+							finder = finders.new_table({
+								results = tasks,
+								entry_maker = function(task)
+									return {
+										value = task,
+										display = task.display,
+										ordinal = task.ordinal,
+										path = task.path,
+										lnum = task.lnum,
+									}
+								end,
+							}),
+							previewer = conf.grep_previewer(opts),
+							sorter = conf.generic_sorter(opts),
+						})
+						:find()
+				end)
+				return true
+			end,
 		})
 		:find()
 end

@@ -104,6 +104,22 @@ pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
         .collect()
 }
 
+pub fn find_requires(path: &PathBuf) -> std::collections::HashMap<String, Vec<SearchResult>> {
+    let mut map: std::collections::HashMap<String, Vec<SearchResult>> =
+        std::collections::HashMap::new();
+    for result in find_todos(path) {
+        for tag in &result.tags {
+            if let Some(person) = tag.strip_prefix("#Requires") {
+                map.entry(person.to_string())
+                    .or_default()
+                    .push(result.clone());
+                break;
+            }
+        }
+    }
+    map
+}
+
 #[test]
 fn get_next_actions() {
     let results = find_next_actions(&"test_files/test.md".into());
@@ -139,6 +155,44 @@ fn get_heading_level_tags() {
     assert_eq!(results[1].tags, vec!["#HeadingTag".to_string()]);
     assert_eq!(results[2].tags, vec!["#NextAction".to_string(),]);
     assert_eq!(results[3].tags, Vec::<String>::new());
+}
+
+#[test]
+fn get_requires() {
+    let results = find_requires(&"test_files/requires_test.md".into());
+    let mut alice = results["Alice"].clone();
+    let mut bob = results["Bob"].clone();
+    alice.sort_by_key(|x| x.lnum);
+    bob.sort_by_key(|x| x.lnum);
+    assert_eq!(
+        alice,
+        vec![
+            SearchResult {
+                ordinal: "Follow up with Alice #RequiresAlice".to_string(),
+                display: "Follow up with Alice #RequiresAlice".to_string(),
+                tags: vec!["#RequiresAlice".to_string()],
+                path: "test_files/requires_test.md".to_string(),
+                lnum: 2,
+            },
+            SearchResult {
+                ordinal: "Another Alice item #RequiresAlice #NextAction".to_string(),
+                display: "Another Alice item #RequiresAlice #NextAction".to_string(),
+                tags: vec!["#RequiresAlice".to_string(), "#NextAction".to_string()],
+                path: "test_files/requires_test.md".to_string(),
+                lnum: 4,
+            },
+        ]
+    );
+    assert_eq!(
+        bob,
+        vec![SearchResult {
+            ordinal: "Review doc #RequiresBob".to_string(),
+            display: "Review doc #RequiresBob".to_string(),
+            tags: vec!["#RequiresBob".to_string()],
+            path: "test_files/requires_test.md".to_string(),
+            lnum: 3,
+        }]
+    );
 }
 
 fn extract_headlines<'source, 'cursor, 'tree>(
