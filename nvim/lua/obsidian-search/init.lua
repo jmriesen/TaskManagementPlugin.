@@ -20,6 +20,7 @@ local defaults = {
 		"#Createing",
 		"#Producing",
 		"#Enjoyment",
+		"#Schedueld",
 	},
 }
 
