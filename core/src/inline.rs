@@ -63,15 +63,13 @@ impl<'a> InLineTree<'a> {
 mod tests {
     use crate::block::BlockTree;
     use crate::test_helpers::dump_inline_tree;
-    use tree_sitter::QueryCursor;
 
     #[test]
     fn markdown_link_hash_is_not_a_tag() {
         // [filename#heading] — the #heading must NOT be extracted as a tag
         let source = "- [ ] Task [filename#heading] and #RealTag\n";
         let block_tree = BlockTree::parse(source.to_owned(), std::path::PathBuf::new());
-        let mut cursor = QueryCursor::new();
-        let tags = block_tree.all_tags(&mut cursor);
+        let tags = block_tree.tags();
 
         assert!(
             !tags.iter().any(|t| t == "#heading"),

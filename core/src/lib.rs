@@ -1,136 +1,15 @@
 use std::path::Path;
-use serde::Serialize;
-use tree_sitter::{QueryCursor, StreamingIterator};
-
-use crate::block::BlockTree;
-
 pub mod block;
-#[cfg(test)]
-mod test_helpers;
 mod helper;
 mod inline;
-use helper::StreamingIteratorExt;
+#[cfg(test)]
+mod test_helpers;
 
-struct ToDoEntry<'a> {
-    heading_tags: Vec<&'a str>,
-    task_tags: Vec<&'a str>,
-    body: &'a str,
-    lnum: usize,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
-pub struct SearchResult {
-    pub ordinal: String,
-    pub display: String,
-    pub tags: Vec<String>,
-    pub path: String,
-    pub lnum: usize,
-}
-
-impl SearchResult {
-    fn new(
-        ToDoEntry {
-            heading_tags,
-            task_tags,
-            body,
-            lnum,
-        }: &ToDoEntry,
-        path: &Path,
-    ) -> Self {
-        let tags: Vec<_> = task_tags
-            .iter()
-            .chain(heading_tags)
-            .map(|x| x.to_string())
-            .collect();
-
-        let mut display = body
-            //Only display the first line up to the tags.
-            .split(['\n', '#'])
-            .next()
-            .unwrap_or_default()
-            .to_string();
-
-        let tag_string = tags.clone().join(" ");
-        display.push_str(&tag_string);
-
-        SearchResult {
-            ordinal: display.clone(),
-            display,
-            tags,
-            path: path
-                .to_str()
-                .expect("This only fails if you are doing something funky with path encodings")
-                .to_owned(),
-            lnum: *lnum,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize)]
-pub struct HeadingMismatch {
-    pub path: String,
-    pub filename: String,
-    pub heading: Option<String>,
-}
-
-pub fn find_tags(tree: &BlockTree) -> Vec<String> {
-    let mut cursor = QueryCursor::new();
-    tree.all_tags(&mut cursor)
-}
-
-pub fn find_heading_mismatch(tree: &BlockTree) -> Option<HeadingMismatch> {
-    let path = &tree.path;
-    let filename = path.file_stem()?.to_str()?.to_owned();
-
-    let mut cursor = QueryCursor::new();
-    let heading = tree
-        .first_h1(&mut cursor)
-        .map(|h| h.text().to_owned());
-
-    if heading.as_deref() == Some(filename.as_str()) {
-        None
-    } else {
-        Some(HeadingMismatch {
-            path: path.to_str().expect("non-UTF-8 path").to_owned(),
-            filename,
-            heading,
-        })
-    }
-}
-
-pub fn find_todos(tree: &BlockTree) -> Vec<SearchResult> {
-    let mut cursor = QueryCursor::new();
-    tree.todos(&mut cursor)
-        .map(|x| SearchResult::new(x, &tree.path))
-        .collect()
-}
-
-pub fn find_next_actions(tree: &BlockTree) -> Vec<SearchResult> {
-    find_todos(tree)
-        .into_iter()
-        .filter(|x| x.tags.contains(&"#NextAction".into()))
-        .collect()
-}
-
-pub fn find_requires(tree: &BlockTree) -> std::collections::HashMap<String, Vec<SearchResult>> {
-    let mut map: std::collections::HashMap<String, Vec<SearchResult>> =
-        std::collections::HashMap::new();
-    for result in find_todos(tree) {
-        for tag in &result.tags {
-            if let Some(person) = tag.strip_prefix("#Requires") {
-                map.entry(person.to_string())
-                    .or_default()
-                    .push(result.clone());
-                break;
-            }
-        }
-    }
-    map
-}
+pub use block::{BlockTree, HeadingMismatch, SearchResult};
 
 #[test]
 fn get_next_actions() {
-    let results = find_next_actions(&BlockTree::from_file(Path::new("test_files/test.md")));
+    let results = BlockTree::from_file(Path::new("test_files/test.md")).next_actions();
     assert_eq!(
         results,
         vec![
@@ -154,7 +33,7 @@ fn get_next_actions() {
 
 #[test]
 fn get_heading_level_tags() {
-    let results = find_todos(&BlockTree::from_file(Path::new("test_files/heading_level_tags.md")));
+    let results = BlockTree::from_file(Path::new("test_files/heading_level_tags.md")).todos();
     dbg!(&results);
     assert_eq!(
         results[0].tags,
@@ -167,7 +46,7 @@ fn get_heading_level_tags() {
 
 #[test]
 fn get_requires() {
-    let results = find_requires(&BlockTree::from_file(Path::new("test_files/requires_test.md")));
+    let results = BlockTree::from_file(Path::new("test_files/requires_test.md")).requires();
     let mut alice = results["Alice"].clone();
     let mut bob = results["Bob"].clone();
     alice.sort_by_key(|x| x.lnum);
@@ -206,7 +85,8 @@ fn get_requires() {
 #[test]
 fn heading_mismatch_detected() {
     // filename is "heading_mismatch_test", heading is "Wrong Heading" — should mismatch
-    let result = find_heading_mismatch(&BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")));
+    let result =
+        BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
     assert_eq!(
         result,
         Some(HeadingMismatch {
@@ -219,6 +99,7 @@ fn heading_mismatch_detected() {
 
 #[test]
 fn heading_match_returns_none() {
-    let result = find_heading_mismatch(&BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")));
+    let result =
+        BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
     assert!(result.is_some());
 }

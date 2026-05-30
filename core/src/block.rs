@@ -1,11 +1,75 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use serde::Serialize;
 use tree_sitter::{Parser, StreamingIterator};
 use tree_sitter::{Query, QueryCursor, Tree};
 
+use crate::helper::StreamingIteratorExt;
 use crate::inline::InLineTree;
-use crate::ToDoEntry;
+
+struct ToDoEntry<'a> {
+    heading_tags: Vec<&'a str>,
+    task_tags: Vec<&'a str>,
+    body: &'a str,
+    lnum: usize,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
+pub struct SearchResult {
+    pub ordinal: String,
+    pub display: String,
+    pub tags: Vec<String>,
+    pub path: String,
+    pub lnum: usize,
+}
+
+impl SearchResult {
+    fn new(
+        ToDoEntry {
+            heading_tags,
+            task_tags,
+            body,
+            lnum,
+        }: &ToDoEntry,
+        path: &Path,
+    ) -> Self {
+        let tags: Vec<_> = task_tags
+            .iter()
+            .chain(heading_tags)
+            .map(|x| x.to_string())
+            .collect();
+
+        let mut display = body
+            //Only display the first line up to the tags.
+            .split(['\n', '#'])
+            .next()
+            .unwrap_or_default()
+            .to_string();
+
+        let tag_string = tags.clone().join(" ");
+        display.push_str(&tag_string);
+
+        SearchResult {
+            ordinal: display.clone(),
+            display,
+            tags,
+            path: path
+                .to_str()
+                .expect("This only fails if you are doing something funky with path encodings")
+                .to_owned(),
+            lnum: *lnum,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct HeadingMismatch {
+    pub path: String,
+    pub filename: String,
+    pub heading: Option<String>,
+}
 
 pub struct BlockTree {
     tree: Tree,
@@ -29,7 +93,68 @@ impl BlockTree {
         Self { tree, source, path }
     }
 
-    pub fn first_h1<'a>(&'a self, cursor: &'a mut QueryCursor) -> Option<InLineTree<'a>> {
+    pub fn tags(&self) -> Vec<String> {
+        static SELECT_INLINE: LazyLock<Query> = LazyLock::new(|| {
+            Query::new(&tree_sitter_md::LANGUAGE.into(), "(inline) @inline").unwrap()
+        });
+
+        let mut cursor = QueryCursor::new();
+        let mut tags = vec![];
+        let mut matches = cursor.matches(&SELECT_INLINE, self.tree.root_node(), self.source.as_bytes());
+        while let Some(m) = matches.next() {
+            let inline_tree = InLineTree::parse(&self.source, m.captures[0].node);
+            tags.extend(inline_tree.tags().into_iter().map(|s| s.to_string()));
+        }
+        tags
+    }
+
+    pub fn heading_mismatch(&self) -> Option<HeadingMismatch> {
+        let filename = self.path.file_stem()?.to_str()?.to_owned();
+
+        let mut cursor = QueryCursor::new();
+        let heading = self.first_h1(&mut cursor).map(|h| h.text().to_owned());
+
+        if heading.as_deref() == Some(filename.as_str()) {
+            None
+        } else {
+            Some(HeadingMismatch {
+                path: self.path.to_str().expect("non-UTF-8 path").to_owned(),
+                filename,
+                heading,
+            })
+        }
+    }
+
+    pub fn todos(&self) -> Vec<SearchResult> {
+        let mut cursor = QueryCursor::new();
+        self.todo_entries(&mut cursor)
+            .map(|x| SearchResult::new(x, &self.path))
+            .collect()
+    }
+
+    pub fn next_actions(&self) -> Vec<SearchResult> {
+        self.todos()
+            .into_iter()
+            .filter(|x| x.tags.contains(&"#NextAction".into()))
+            .collect()
+    }
+
+    pub fn requires(&self) -> HashMap<String, Vec<SearchResult>> {
+        let mut map: HashMap<String, Vec<SearchResult>> = HashMap::new();
+        for result in self.todos() {
+            for tag in &result.tags {
+                if let Some(person) = tag.strip_prefix("#Requires") {
+                    map.entry(person.to_string())
+                        .or_default()
+                        .push(result.clone());
+                    break;
+                }
+            }
+        }
+        map
+    }
+
+    fn first_h1<'a>(&'a self, cursor: &'a mut QueryCursor) -> Option<InLineTree<'a>> {
         static SELECT_H1: LazyLock<Query> = LazyLock::new(|| {
             Query::new(
                 &tree_sitter_md::LANGUAGE.into(),
@@ -44,21 +169,7 @@ impl BlockTree {
             .map(|m| InLineTree::parse(&self.source, m.captures[0].node))
     }
 
-    pub fn all_tags(&self, cursor: &mut QueryCursor) -> Vec<String> {
-        static SELECT_INLINE: LazyLock<Query> = LazyLock::new(|| {
-            Query::new(&tree_sitter_md::LANGUAGE.into(), "(inline) @inline").unwrap()
-        });
-
-        let mut tags = vec![];
-        let mut matches = cursor.matches(&SELECT_INLINE, self.tree.root_node(), self.source.as_bytes());
-        while let Some(m) = matches.next() {
-            let inline_tree = InLineTree::parse(&self.source, m.captures[0].node);
-            tags.extend(inline_tree.tags().into_iter().map(|s| s.to_string()));
-        }
-        tags
-    }
-
-    pub fn todos<'a>(&'a self, cursor: &'a mut QueryCursor) -> impl StreamingIterator<Item = ToDoEntry<'a>> + use<'a> {
+    fn todo_entries<'a>(&'a self, cursor: &'a mut QueryCursor) -> impl StreamingIterator<Item = ToDoEntry<'a>> + use<'a> {
         static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
             Query::new(
                 &tree_sitter_md::LANGUAGE.into(),
