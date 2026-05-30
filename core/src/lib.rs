@@ -13,7 +13,8 @@ use crate::block::BlockTree;
 use crate::inline::InLineTree;
 
 mod block;
-mod formatting;
+#[cfg(test)]
+mod test_helpers;
 mod helper;
 mod inline;
 use helper::StreamingIteratorExt;
