@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
@@ -42,23 +43,15 @@ fn main() {
     match Cli::parse().command {
         Command::Todos {
             dir_path,
-            mut include,
-            mut any,
-            mut exclude,
+            include,
+            any,
+            exclude,
         } => {
-            let add_leading_hash = |tags: &mut Vec<String>| {
-                tags.iter_mut().for_each(|i| i.insert(0, '#'));
-            };
-            add_leading_hash(&mut include);
-            add_leading_hash(&mut any);
-            add_leading_hash(&mut exclude);
-
             let results: Vec<_> = find_paths(&dir_path)
-                .iter()
-                .flat_map(|p| Document::from_file(p).todos())
-                .filter(|x| include.is_empty() || include.iter().all(|y| x.tags.contains(y)))
-                .filter(|x| any.is_empty() || any.iter().any(|y| x.tags.contains(y)))
-                .filter(|x| exclude.iter().all(|y| !x.tags.contains(y)))
+                .flat_map(|p| Document::from_file(&p).todos())
+                .filter(|x| include.is_empty() || include.iter().all(|y| x.tags.contains(&format!("#{y}"))))
+                .filter(|x| any.is_empty() || any.iter().any(|y| x.tags.contains(&format!("#{y}"))))
+                .filter(|x| exclude.iter().all(|y| !x.tags.contains(&format!("#{y}"))))
                 .collect();
             print!(
                 "{}",
@@ -67,8 +60,7 @@ fn main() {
         }
         Command::HeadingCheck { dir_path } => {
             let results: Vec<_> = find_paths(&dir_path)
-                .iter()
-                .filter_map(|p| Document::from_file(p).heading_mismatch())
+                .filter_map(|p| Document::from_file(&p).heading_mismatch())
                 .collect();
             print!(
                 "{}",
@@ -81,8 +73,7 @@ fn main() {
                 print!("{}", std::fs::read_to_string(&cache).expect("failed to read cache"));
             } else {
                 let mut tags: Vec<String> = find_paths(&dir_path)
-                    .iter()
-                    .flat_map(|p| Document::from_file(p).tags())
+                    .flat_map(|p| Document::from_file(&p).tags())
                     .collect();
                 tags.sort();
                 tags.dedup();
@@ -98,8 +89,7 @@ fn main() {
             }
         }
         Command::Requires { dir_path } => {
-            let mut combined: std::collections::HashMap<String, Vec<core::SearchResult>> =
-                std::collections::HashMap::new();
+            let mut combined: HashMap<String, Vec<core::SearchResult>> = HashMap::new();
             for path in find_paths(&dir_path) {
                 for (person, results) in Document::from_file(&path).requires() {
                     combined.entry(person).or_default().extend(results);
@@ -113,18 +103,18 @@ fn main() {
     }
 }
 
-fn find_paths(dir: &Path) -> Vec<PathBuf> {
-    let dir = std::fs::read_dir(dir).expect("error opening directory");
-    dir.filter_map(|x| x.ok())
-        .flat_map(|x| {
-            let file_type = x.file_type().unwrap();
-            if file_type.is_dir() {
-                find_paths(&x.path())
-            } else if file_type.is_file() && x.path().extension().is_some_and(|e| e == "md") {
-                vec![x.path()]
-            } else {
-                vec![]
+fn find_paths(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    let mut stack = vec![dir.to_path_buf()];
+    std::iter::from_fn(move || {
+        while let Some(path) = stack.pop() {
+            if path.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&path) {
+                    stack.extend(entries.filter_map(|e| e.ok()).map(|e| e.path()));
+                }
+            } else if path.extension().is_some_and(|e| e == "md") {
+                return Some(path);
             }
-        })
-        .collect()
+        }
+        None
+    })
 }

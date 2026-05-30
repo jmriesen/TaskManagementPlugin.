@@ -1,9 +1,11 @@
+use std::sync::LazyLock;
+
 use tree_sitter::{Parser, Point, StreamingIterator};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::INLINE_LANGUAGE;
 
 pub struct InLineTree<'a> {
-    pub(crate) tree: tree_sitter::Tree,
+    tree: tree_sitter::Tree,
     pub(crate) text: &'a str,
     pub(crate) start_point: Point,
 }
@@ -40,10 +42,12 @@ impl<'a> InLineTree<'a> {
     }
 
     pub fn tags(&self) -> Vec<&'a str> {
-        let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
+        static SELECT_TAGS: LazyLock<Query> = LazyLock::new(|| {
+            Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap()
+        });
         let mut cursor = QueryCursor::new();
 
-        let mut matches = cursor.matches(select_tags, self.tree.root_node(), self.text.as_bytes());
+        let mut matches = cursor.matches(&SELECT_TAGS, self.tree.root_node(), self.text.as_bytes());
         let mut results = vec![];
 
         while let Some(r#match) = matches.next() {

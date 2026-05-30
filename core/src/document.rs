@@ -100,10 +100,15 @@ impl Document {
 
         let mut cursor = QueryCursor::new();
         let mut tags = vec![];
-        let mut matches = cursor.matches(&SELECT_INLINE, self.tree.root_node(), self.source.as_bytes());
+        let mut matches = cursor.matches(
+            &SELECT_INLINE,
+            self.tree.root_node(),
+            self.source.as_bytes(),
+        );
         while let Some(m) = matches.next() {
             let inline_tree = InLineTree::parse(&self.source, m.captures[0].node);
-            tags.extend(inline_tree.tags().into_iter().map(|s| s.to_string()));
+
+            tags.extend(inline_tree.tags().iter().map(|s| s.to_string()));
         }
         tags
     }
@@ -142,13 +147,8 @@ impl Document {
     pub fn requires(&self) -> HashMap<String, Vec<SearchResult>> {
         let mut map: HashMap<String, Vec<SearchResult>> = HashMap::new();
         for result in self.todos() {
-            for tag in &result.tags {
-                if let Some(person) = tag.strip_prefix("#Requires") {
-                    map.entry(person.to_string())
-                        .or_default()
-                        .push(result.clone());
-                    break;
-                }
+            if let Some(person) = result.tags.iter().find_map(|t| t.strip_prefix("#Requires")) {
+                map.entry(person.to_string()).or_default().push(result);
             }
         }
         map
@@ -169,7 +169,10 @@ impl Document {
             .map(|m| InLineTree::parse(&self.source, m.captures[0].node))
     }
 
-    fn todo_entries<'a>(&'a self, cursor: &'a mut QueryCursor) -> impl StreamingIterator<Item = ToDoEntry<'a>> + use<'a> {
+    fn todo_entries<'a>(
+        &'a self,
+        cursor: &'a mut QueryCursor,
+    ) -> impl StreamingIterator<Item = ToDoEntry<'a>> + use<'a> {
         static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
             Query::new(
                 &tree_sitter_md::LANGUAGE.into(),
