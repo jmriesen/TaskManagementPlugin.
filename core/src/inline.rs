@@ -61,15 +61,15 @@ impl<'a> InLineTree<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::block::BlockTree;
+    use crate::document::Document;
     use crate::test_helpers::dump_inline_tree;
 
     #[test]
     fn markdown_link_hash_is_not_a_tag() {
         // [filename#heading] — the #heading must NOT be extracted as a tag
         let source = "- [ ] Task [filename#heading] and #RealTag\n";
-        let block_tree = BlockTree::parse(source.to_owned(), std::path::PathBuf::new());
-        let tags = block_tree.tags();
+        let doc = Document::parse(source.to_owned(), std::path::PathBuf::new());
+        let tags = doc.tags();
 
         assert!(
             !tags.iter().any(|t| t == "#heading"),

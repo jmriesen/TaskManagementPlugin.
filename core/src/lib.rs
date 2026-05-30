@@ -1,15 +1,15 @@
 use std::path::Path;
-pub mod block;
+pub mod document;
 mod helper;
 mod inline;
 #[cfg(test)]
 mod test_helpers;
 
-pub use block::{BlockTree, HeadingMismatch, SearchResult};
+pub use document::{Document, HeadingMismatch, SearchResult};
 
 #[test]
 fn get_next_actions() {
-    let results = BlockTree::from_file(Path::new("test_files/test.md")).next_actions();
+    let results = Document::from_file(Path::new("test_files/test.md")).next_actions();
     assert_eq!(
         results,
         vec![
@@ -33,7 +33,7 @@ fn get_next_actions() {
 
 #[test]
 fn get_heading_level_tags() {
-    let results = BlockTree::from_file(Path::new("test_files/heading_level_tags.md")).todos();
+    let results = Document::from_file(Path::new("test_files/heading_level_tags.md")).todos();
     dbg!(&results);
     assert_eq!(
         results[0].tags,
@@ -46,7 +46,7 @@ fn get_heading_level_tags() {
 
 #[test]
 fn get_requires() {
-    let results = BlockTree::from_file(Path::new("test_files/requires_test.md")).requires();
+    let results = Document::from_file(Path::new("test_files/requires_test.md")).requires();
     let mut alice = results["Alice"].clone();
     let mut bob = results["Bob"].clone();
     alice.sort_by_key(|x| x.lnum);
@@ -86,7 +86,7 @@ fn get_requires() {
 fn heading_mismatch_detected() {
     // filename is "heading_mismatch_test", heading is "Wrong Heading" — should mismatch
     let result =
-        BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
+        Document::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
     assert_eq!(
         result,
         Some(HeadingMismatch {
@@ -100,6 +100,6 @@ fn heading_mismatch_detected() {
 #[test]
 fn heading_match_returns_none() {
     let result =
-        BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
+        Document::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
     assert!(result.is_some());
 }

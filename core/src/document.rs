@@ -71,13 +71,13 @@ pub struct HeadingMismatch {
     pub heading: Option<String>,
 }
 
-pub struct BlockTree {
+pub struct Document {
     tree: Tree,
     source: String,
     pub path: PathBuf,
 }
 
-impl BlockTree {
+impl Document {
     pub fn from_file(path: &Path) -> Self {
         let source = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("error reading {}: {e}", path.display()));
