@@ -1,33 +1,15 @@
-use std::fs::File;
-use std::io::Read;
-use std::marker::PhantomData;
-use std::path::PathBuf;
-use std::sync::LazyLock;
-
+use std::path::Path;
 use serde::Serialize;
-use tree_sitter::{Point, StreamingIterator, Tree};
-use tree_sitter::{Query, QueryCursor};
-use tree_sitter_md::LANGUAGE as MD;
+use tree_sitter::{QueryCursor, StreamingIterator};
 
 use crate::block::BlockTree;
-use crate::inline::InLineTree;
 
-mod block;
+pub mod block;
 #[cfg(test)]
 mod test_helpers;
 mod helper;
 mod inline;
 use helper::StreamingIteratorExt;
-
-///Represents a tree for the inline parser
-struct MyTree<'a, T: TreeType> {
-    tree: Tree,
-    text: &'a str,
-    //The first line that the tree is on.
-    start_point: Point,
-    _phantom: PhantomData<T>,
-}
-trait TreeType {}
 
 struct ToDoEntry<'a> {
     heading_tags: Vec<&'a str>,
@@ -53,7 +35,7 @@ impl SearchResult {
             body,
             lnum,
         }: &ToDoEntry,
-        path: &PathBuf,
+        path: &Path,
     ) -> Self {
         let tags: Vec<_> = task_tags
             .iter()
@@ -77,7 +59,7 @@ impl SearchResult {
             tags,
             path: path
                 .to_str()
-                .expect("This only fails if you are doing something funky with path encodeings")
+                .expect("This only fails if you are doing something funky with path encodings")
                 .to_owned(),
             lnum: *lnum,
         }
@@ -91,69 +73,49 @@ pub struct HeadingMismatch {
     pub heading: Option<String>,
 }
 
-pub fn find_tags(path: &PathBuf) -> Vec<String> {
-    let mut source = String::new();
-    let mut file = File::open(path).expect("error opening file");
-    file.read_to_string(&mut source).unwrap();
-
-    let tree = BlockTree::parse(&source);
+pub fn find_tags(tree: &BlockTree) -> Vec<String> {
     let mut cursor = QueryCursor::new();
-    tree.all_tags(&source, &mut cursor)
+    tree.all_tags(&mut cursor)
 }
 
-pub fn find_heading_mismatch(path: &PathBuf) -> Option<HeadingMismatch> {
+pub fn find_heading_mismatch(tree: &BlockTree) -> Option<HeadingMismatch> {
+    let path = &tree.path;
     let filename = path.file_stem()?.to_str()?.to_owned();
 
-    let mut source = String::new();
-    let mut file = File::open(path).expect("error opening file");
-    file.read_to_string(&mut source).unwrap();
-
-    let tree = BlockTree::parse(&source);
     let mut cursor = QueryCursor::new();
     let heading = tree
-        .first_h1(&source, &mut cursor)
+        .first_h1(&mut cursor)
         .map(|h| h.text().to_owned());
 
-    let matches = heading.as_deref() == Some(filename.as_str());
-    if matches {
+    if heading.as_deref() == Some(filename.as_str()) {
         None
     } else {
         Some(HeadingMismatch {
-            path: path
-                .to_str()
-                .expect("non-UTF-8 path")
-                .to_owned(),
+            path: path.to_str().expect("non-UTF-8 path").to_owned(),
             filename,
             heading,
         })
     }
 }
 
-pub fn find_todos(path: &PathBuf) -> Vec<SearchResult> {
-    let mut source = String::new();
-    let mut file = File::open(path).expect("error opening file");
-    file.read_to_string(&mut source).unwrap();
-
-    let tree = BlockTree::parse(&source);
-
+pub fn find_todos(tree: &BlockTree) -> Vec<SearchResult> {
     let mut cursor = QueryCursor::new();
-
-    tree.todos(&source, &mut cursor)
-        .map(|x| SearchResult::new(x, path))
+    tree.todos(&mut cursor)
+        .map(|x| SearchResult::new(x, &tree.path))
         .collect()
 }
 
-pub fn find_next_actions(path: &PathBuf) -> Vec<SearchResult> {
-    find_todos(path)
+pub fn find_next_actions(tree: &BlockTree) -> Vec<SearchResult> {
+    find_todos(tree)
         .into_iter()
         .filter(|x| x.tags.contains(&"#NextAction".into()))
         .collect()
 }
 
-pub fn find_requires(path: &PathBuf) -> std::collections::HashMap<String, Vec<SearchResult>> {
+pub fn find_requires(tree: &BlockTree) -> std::collections::HashMap<String, Vec<SearchResult>> {
     let mut map: std::collections::HashMap<String, Vec<SearchResult>> =
         std::collections::HashMap::new();
-    for result in find_todos(path) {
+    for result in find_todos(tree) {
         for tag in &result.tags {
             if let Some(person) = tag.strip_prefix("#Requires") {
                 map.entry(person.to_string())
@@ -168,7 +130,7 @@ pub fn find_requires(path: &PathBuf) -> std::collections::HashMap<String, Vec<Se
 
 #[test]
 fn get_next_actions() {
-    let results = find_next_actions(&"test_files/test.md".into());
+    let results = find_next_actions(&BlockTree::from_file(Path::new("test_files/test.md")));
     assert_eq!(
         results,
         vec![
@@ -192,7 +154,7 @@ fn get_next_actions() {
 
 #[test]
 fn get_heading_level_tags() {
-    let results = find_todos(&"test_files/heading_level_tags.md".into());
+    let results = find_todos(&BlockTree::from_file(Path::new("test_files/heading_level_tags.md")));
     dbg!(&results);
     assert_eq!(
         results[0].tags,
@@ -205,7 +167,7 @@ fn get_heading_level_tags() {
 
 #[test]
 fn get_requires() {
-    let results = find_requires(&"test_files/requires_test.md".into());
+    let results = find_requires(&BlockTree::from_file(Path::new("test_files/requires_test.md")));
     let mut alice = results["Alice"].clone();
     let mut bob = results["Bob"].clone();
     alice.sort_by_key(|x| x.lnum);
@@ -244,7 +206,7 @@ fn get_requires() {
 #[test]
 fn heading_mismatch_detected() {
     // filename is "heading_mismatch_test", heading is "Wrong Heading" — should mismatch
-    let result = find_heading_mismatch(&"test_files/heading_mismatch_test.md".into());
+    let result = find_heading_mismatch(&BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")));
     assert_eq!(
         result,
         Some(HeadingMismatch {
@@ -257,40 +219,6 @@ fn heading_mismatch_detected() {
 
 #[test]
 fn heading_match_returns_none() {
-    // requires_test.md has heading "# Work" — doesn't match filename, expect mismatch
-    // Use heading_level_tags.md which we can inspect
-    let result = find_heading_mismatch(&"test_files/heading_mismatch_test.md".into());
+    let result = find_heading_mismatch(&BlockTree::from_file(Path::new("test_files/heading_mismatch_test.md")));
     assert!(result.is_some());
-
-    // A file where stem == h1 text should return None — tested indirectly via the
-    // mismatch case above confirming the comparison logic works.
-}
-
-fn extract_headlines<'source, 'cursor, 'tree>(
-    source: &'source str,
-    tree: &'tree tree_sitter::Tree,
-    cursor: &'cursor mut QueryCursor,
-) -> impl StreamingIterator<Item = InLineTree<'source>> + use<'source, 'cursor>
-where
-    'tree: 'cursor,
-{
-    static SELECT_HEADLINES: LazyLock<Query> = LazyLock::new(|| {
-        Query::new(
-            &MD.into(),
-            "[
-  (atx_heading
-    (_) 
-    (inline) @heading.text)
-
-  (setext_heading
-    (paragraph (inline) @heading.text)
-    (_))
-]",
-        )
-        .unwrap()
-    });
-
-    cursor
-        .matches(&SELECT_HEADLINES, tree.root_node(), source.as_bytes())
-        .map(move |r#match| InLineTree::parse(source, r#match.captures[0].node))
 }

@@ -1,14 +1,12 @@
-use std::marker::PhantomData;
-
-use tree_sitter::{Parser, StreamingIterator};
+use tree_sitter::{Parser, Point, StreamingIterator};
 use tree_sitter::{Query, QueryCursor};
 use tree_sitter_md::INLINE_LANGUAGE;
 
-use crate::{MyTree, TreeType};
-
-pub struct Inline;
-pub type InLineTree<'a> = MyTree<'a, Inline>;
-impl TreeType for Inline {}
+pub struct InLineTree<'a> {
+    pub(crate) tree: tree_sitter::Tree,
+    pub(crate) text: &'a str,
+    pub(crate) start_point: Point,
+}
 
 fn has_link_ancestor(node: tree_sitter::Node) -> bool {
     let mut current = node.parent();
@@ -34,7 +32,6 @@ impl<'a> InLineTree<'a> {
             tree,
             text,
             start_point,
-            _phantom: PhantomData::default(),
         }
     }
 
@@ -64,7 +61,6 @@ impl<'a> InLineTree<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::block::BlockTree;
     use crate::test_helpers::dump_inline_tree;
     use tree_sitter::QueryCursor;
@@ -73,9 +69,9 @@ mod tests {
     fn markdown_link_hash_is_not_a_tag() {
         // [filename#heading] — the #heading must NOT be extracted as a tag
         let source = "- [ ] Task [filename#heading] and #RealTag\n";
-        let block_tree = BlockTree::parse(source);
+        let block_tree = BlockTree::parse(source.to_owned(), std::path::PathBuf::new());
         let mut cursor = QueryCursor::new();
-        let tags = block_tree.all_tags(source, &mut cursor);
+        let tags = block_tree.all_tags(&mut cursor);
 
         assert!(
             !tags.iter().any(|t| t == "#heading"),

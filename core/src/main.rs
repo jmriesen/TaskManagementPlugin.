@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use core::{find_heading_mismatch, find_requires, find_tags, find_todos};
+use core::block::BlockTree;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -55,8 +56,7 @@ fn main() {
 
             let results: Vec<_> = find_paths(&dir_path)
                 .iter()
-                .map(|x| find_todos(x))
-                .flatten()
+                .flat_map(|p| find_todos(&BlockTree::from_file(p)))
                 .filter(|x| include.is_empty() || include.iter().all(|y| x.tags.contains(y)))
                 .filter(|x| any.is_empty() || any.iter().any(|y| x.tags.contains(y)))
                 .filter(|x| exclude.iter().all(|y| !x.tags.contains(y)))
@@ -69,7 +69,7 @@ fn main() {
         Command::HeadingCheck { dir_path } => {
             let results: Vec<_> = find_paths(&dir_path)
                 .iter()
-                .filter_map(|p| find_heading_mismatch(p))
+                .filter_map(|p| find_heading_mismatch(&BlockTree::from_file(p)))
                 .collect();
             print!(
                 "{}",
@@ -83,7 +83,8 @@ fn main() {
             } else {
                 let mut tags: Vec<String> = find_paths(&dir_path)
                     .iter()
-                    .flat_map(|p| find_tags(p))
+                    .flat_map(|p| find_tags(&BlockTree::from_file(p)))
+
                     .collect();
                 tags.sort();
                 tags.dedup();
@@ -102,7 +103,7 @@ fn main() {
             let mut combined: std::collections::HashMap<String, Vec<core::SearchResult>> =
                 std::collections::HashMap::new();
             for path in find_paths(&dir_path) {
-                for (person, results) in find_requires(&path) {
+                for (person, results) in find_requires(&BlockTree::from_file(&path)) {
                     combined.entry(person).or_default().extend(results);
                 }
             }
@@ -117,7 +118,7 @@ fn main() {
 fn find_paths(dir: &Path) -> Vec<PathBuf> {
     let dir = std::fs::read_dir(dir).expect("error opening directory");
     dir.filter_map(|x| x.ok())
-        .map(|x| {
+        .flat_map(|x| {
             let file_type = x.file_type().unwrap();
             if file_type.is_dir() {
                 find_paths(&x.path())
@@ -127,6 +128,5 @@ fn find_paths(dir: &Path) -> Vec<PathBuf> {
                 vec![]
             }
         })
-        .flatten()
         .collect()
 }
