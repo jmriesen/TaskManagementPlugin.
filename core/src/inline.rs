@@ -27,6 +27,10 @@ impl<'a> InLineTree<'a> {
         }
     }
 
+    pub fn text(&self) -> &'a str {
+        self.text
+    }
+
     pub fn tags(&self) -> Vec<&'a str> {
         let select_tags = &Query::new(&INLINE_LANGUAGE.into(), "(tag) @text").unwrap();
         let mut cursor = QueryCursor::new();

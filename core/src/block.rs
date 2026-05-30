@@ -26,6 +26,49 @@ impl<'a> BlockTree<'a> {
             _phantom: PhantomData::default(),
         }
     }
+    pub fn first_h1<'source, 'cursor, 'tree>(
+        &'tree self,
+        source: &'source str,
+        cursor: &'cursor mut QueryCursor,
+    ) -> Option<InLineTree<'source>>
+    where
+        'tree: 'cursor,
+    {
+        static SELECT_H1: LazyLock<Query> = LazyLock::new(|| {
+            Query::new(
+                &tree_sitter_md::LANGUAGE.into(),
+                "(atx_heading (atx_h1_marker) (inline) @heading)",
+            )
+            .unwrap()
+        });
+
+        cursor
+            .matches(&SELECT_H1, self.tree.root_node(), source.as_bytes())
+            .next()
+            .map(|m| InLineTree::parse(source, m.captures[0].node))
+    }
+
+    pub fn all_tags<'source, 'cursor, 'tree>(
+        &'tree self,
+        source: &'source str,
+        cursor: &'cursor mut QueryCursor,
+    ) -> Vec<String>
+    where
+        'tree: 'cursor,
+    {
+        static SELECT_INLINE: LazyLock<Query> = LazyLock::new(|| {
+            Query::new(&tree_sitter_md::LANGUAGE.into(), "(inline) @inline").unwrap()
+        });
+
+        let mut tags = vec![];
+        let mut matches = cursor.matches(&SELECT_INLINE, self.tree.root_node(), source.as_bytes());
+        while let Some(m) = matches.next() {
+            let inline_tree = InLineTree::parse(source, m.captures[0].node);
+            tags.extend(inline_tree.tags().into_iter().map(|s| s.to_string()));
+        }
+        tags
+    }
+
     pub fn todos<'source, 'cursor, 'tree>(
         &'tree self,
         source: &'source str,

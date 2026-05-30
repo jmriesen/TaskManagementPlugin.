@@ -7,27 +7,30 @@ local project_root = vim.fn.fnamemodify(plugin_root, ":h")
 local defaults = {
 	search_binary = project_root .. "/core/target/release/core",
 	vault_path = "~/Projects/vault/",
-	tags = {
-		"#NextAction",
-		"#RequiresMother",
-		"#RequiresFather",
-		"#Errands",
-		"#OnTheGo",
-		"#Active",
-		"#Waiting",
-		"#Mindless",
-		"#Refactoring",
-		"#Createing",
-		"#Producing",
-		"#Enjoyment",
-		"#Schedueld",
-	},
 }
 
 M.config = {}
 
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", defaults, opts or {})
+end
+
+local function get_tags()
+	local binary = vim.fn.expand(M.config.search_binary)
+	local vault = vim.fn.expand(M.config.vault_path)
+	local raw = vim.fn.system({ binary, "tags", vault })
+	if vim.v.shell_error ~= 0 then
+		vim.notify("obsidian-search tags failed:\n" .. raw, vim.log.levels.ERROR)
+		return {}
+	end
+	return vim.json.decode(raw)
+end
+
+function M.clear_tag_cache()
+	local binary = vim.fn.expand(M.config.search_binary)
+	local vault = vim.fn.expand(M.config.vault_path)
+	vim.fn.system({ binary, "clear-tag-cache", vault })
+	vim.notify("Tag cache cleared.", vim.log.levels.INFO)
 end
 
 function M.search_tasks(opts)
@@ -177,6 +180,43 @@ function M.requires(opts)
 		:find()
 end
 
+function M.heading_check(opts)
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local conf = require("telescope.config").values
+
+	opts = opts or {}
+	local binary = vim.fn.expand(M.config.search_binary)
+	local vault = vim.fn.expand(M.config.vault_path)
+	local raw = vim.fn.system({ binary, "heading-check", vault })
+	if vim.v.shell_error ~= 0 then
+		vim.notify("obsidian-search heading-check failed:\n" .. raw, vim.log.levels.ERROR)
+		return
+	end
+	local results = vim.json.decode(raw)
+
+	pickers
+		.new(opts, {
+			prompt_title = "Heading Mismatches",
+			finder = finders.new_table({
+				results = results,
+				entry_maker = function(entry)
+					local heading = (entry.heading ~= vim.NIL and entry.heading) or "(no h1 heading)"
+					return {
+						value = entry,
+						display = entry.filename .. "  →  " .. heading,
+						ordinal = entry.filename .. " " .. heading,
+						path = entry.path,
+						lnum = 1,
+					}
+				end,
+			}),
+			previewer = conf.grep_previewer(opts),
+			sorter = conf.generic_sorter(opts),
+		})
+		:find()
+end
+
 function M.add_tags(opts)
 	local pickers = require("telescope.pickers")
 	local finders = require("telescope.finders")
@@ -185,9 +225,10 @@ function M.add_tags(opts)
 	local action_state = require("telescope.actions.state")
 
 	opts = opts or {}
+	local tags = get_tags()
 	pickers
 		.new(opts, {
-			finder = finders.new_table({ results = M.config.tags }),
+			finder = finders.new_table({ results = tags }),
 			sorter = conf.generic_sorter(opts),
 			attach_mappings = function(bufnr, _)
 				actions.select_default:replace(function()
