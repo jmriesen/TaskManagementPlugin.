@@ -107,7 +107,6 @@ impl Document {
         );
         while let Some(m) = matches.next() {
             let inline_tree = InLineTree::parse(&self.source, m.captures[0].node);
-
             tags.extend(inline_tree.tags().iter().map(|s| s.to_string()));
         }
         tags

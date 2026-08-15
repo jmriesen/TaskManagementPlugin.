@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -82,4 +84,9 @@ pub fn extract_content(full_content: &str, line_start: usize, line_end: usize) -
         .take(line_end - line_start)
         .collect::<Vec<_>>()[..]
         .join("\n")
+}
+
+#[wasm_bindgen(js_name = temp)]
+pub fn test() {
+    core::Document::parse("document_contnet".into(), PathBuf::from("./"));
 }
