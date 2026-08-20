@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use core::document::Document;
+use core::{filter_todos, TagFilter};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -47,12 +48,13 @@ fn main() {
             any,
             exclude,
         } => {
-            let results: Vec<_> = find_paths(&dir_path)
-                .flat_map(|p| Document::from_file(&p).todos())
-                .filter(|x| include.is_empty() || include.iter().all(|y| x.tags.contains(&format!("#{y}"))))
-                .filter(|x| any.is_empty() || any.iter().any(|y| x.tags.contains(&format!("#{y}"))))
-                .filter(|x| exclude.iter().all(|y| !x.tags.contains(&format!("#{y}"))))
-                .collect();
+            let filter = TagFilter {
+                include: include.iter().map(|t| format!("#{t}")).collect(),
+                any: any.iter().map(|t| format!("#{t}")).collect(),
+                exclude: exclude.iter().map(|t| format!("#{t}")).collect(),
+            };
+            let todos = find_paths(&dir_path).flat_map(|p| Document::from_file(&p).todos());
+            let results = filter_todos(todos, &filter);
             print!(
                 "{}",
                 serde_json::to_string_pretty(&results).expect("serialization should never fail.")

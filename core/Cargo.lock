@@ -330,7 +330,7 @@ checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
 [[package]]
 name = "tree-sitter-md"
 version = "0.5.3"
-source = "git+ssh://git@gitea.home.arpa:2222/jriesen/tree-sitter-markdown.git#207fe50a287bf8c37a1699529274eac6fe072954"
+source = "git+ssh://git@gitea.home.arpa:2222/jriesen/tree-sitter-markdown.git?rev=8b8aa142653d3aa04dea42b1aff1f36fc9ef0a5f#8b8aa142653d3aa04dea42b1aff1f36fc9ef0a5f"
 dependencies = [
  "cc",
  "tree-sitter-language",

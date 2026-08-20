@@ -4,12 +4,12 @@ mod inline;
 #[cfg(test)]
 mod test_helpers;
 
-pub use document::{Document, HeadingMismatch, SearchResult};
+pub use document::{filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use super::{Document, HeadingMismatch, SearchResult};
+    use super::{filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
 
     #[test]
     fn get_next_actions() {
@@ -106,5 +106,48 @@ mod tests {
         let result =
             Document::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn tag_filter_include_requires_all() {
+        let filter = TagFilter {
+            include: vec!["#NextAction".into(), "#SecondTag".into()],
+            ..Default::default()
+        };
+        assert!(!filter.matches(&["#NextAction".to_string()]));
+        assert!(filter.matches(&["#NextAction".to_string(), "#SecondTag".to_string()]));
+    }
+
+    #[test]
+    fn tag_filter_any_requires_at_least_one() {
+        let filter = TagFilter {
+            any: vec!["#Waiting".into(), "#Blocked".into()],
+            ..Default::default()
+        };
+        assert!(!filter.matches(&["#NextAction".to_string()]));
+        assert!(filter.matches(&["#Waiting".to_string()]));
+    }
+
+    #[test]
+    fn tag_filter_exclude_rejects_any_match() {
+        let filter = TagFilter {
+            exclude: vec!["#Done".into()],
+            ..Default::default()
+        };
+        assert!(filter.matches(&["#NextAction".to_string()]));
+        assert!(!filter.matches(&["#NextAction".to_string(), "#Done".to_string()]));
+    }
+
+    #[test]
+    fn filter_todos_combines_all_three_rules() {
+        let results = Document::from_file(Path::new("test_files/test.md")).todos();
+        let filter = TagFilter {
+            include: vec!["#NextAction".into()],
+            any: vec![],
+            exclude: vec!["#SecondTag".into()],
+        };
+        let filtered = filter_todos(results, &filter);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].display, "Simple task #NextAction");
     }
 }
