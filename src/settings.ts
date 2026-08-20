@@ -6,7 +6,7 @@ export interface TaskManagementSettings {
 }
 
 export const DEFAULT_SETTINGS: TaskManagementSettings = {
-	mySetting: 'default'
+	mySetting: 'default',
 }
 
 export class SettingTab extends PluginSettingTab {
