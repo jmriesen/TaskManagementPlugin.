@@ -4,7 +4,7 @@ mod inline;
 #[cfg(test)]
 mod test_helpers;
 
-pub use document::{filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
+pub use document::{combine_requires, filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
 
 #[cfg(test)]
 mod tests {

@@ -13,3 +13,8 @@ tree-sitter = "0.26.11"
 tree-sitter-language = "0.1.7"
 tree-sitter-md = { git = "ssh://git@gitea.home.arpa:2222/jriesen/tree-sitter-markdown.git",  rev = "8b8aa142653d3aa04dea42b1aff1f36fc9ef0a5f" }
 
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+wasm = ["dep:wasm-bindgen"]
+

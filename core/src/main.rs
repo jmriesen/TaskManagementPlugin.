@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use core::document::Document;
-use core::{filter_todos, TagFilter};
+use core::{combine_requires, filter_todos, TagFilter};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -91,12 +90,8 @@ fn main() {
             }
         }
         Command::Requires { dir_path } => {
-            let mut combined: HashMap<String, Vec<core::SearchResult>> = HashMap::new();
-            for path in find_paths(&dir_path) {
-                for (person, results) in Document::from_file(&path).requires() {
-                    combined.entry(person).or_default().extend(results);
-                }
-            }
+            let documents: Vec<_> = find_paths(&dir_path).map(|p| Document::from_file(&p)).collect();
+            let combined = combine_requires(&documents);
             print!(
                 "{}",
                 serde_json::to_string_pretty(&combined).expect("serialization should never fail.")

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use core::document::Document;
+use core::{combine_requires, filter_todos, HeadingMismatch, SearchResult, TagFilter};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -86,7 +88,73 @@ pub fn extract_content(full_content: &str, line_start: usize, line_end: usize) -
         .join("\n")
 }
 
-#[wasm_bindgen(js_name = temp)]
-pub fn test() {
-    core::Document::parse("document_contnet".into(), PathBuf::from("./"));
+/// One vault file, read by the TS side (wasm has no filesystem access).
+#[wasm_bindgen(getter_with_clone)]
+pub struct VaultFile {
+    pub path: String,
+    pub content: String,
+}
+
+#[wasm_bindgen]
+impl VaultFile {
+    #[wasm_bindgen(constructor)]
+    pub fn new(path: String, content: String) -> Self {
+        VaultFile { path, content }
+    }
+}
+
+/// All of one person's `#Requires<Name>` tasks — the wasm-friendly stand-in
+/// for a `person -> tasks` map, since wasm-bindgen has no native map/record type.
+#[wasm_bindgen(getter_with_clone)]
+pub struct PersonResults {
+    pub person: String,
+    pub tasks: Vec<SearchResult>,
+}
+
+fn parse_documents(files: Vec<VaultFile>) -> Vec<Document> {
+    files
+        .into_iter()
+        .map(|f| Document::parse(f.content, PathBuf::from(f.path)))
+        .collect()
+}
+
+#[wasm_bindgen(js_name = searchTodos)]
+pub fn search_todos(
+    files: Vec<VaultFile>,
+    include: Vec<String>,
+    any: Vec<String>,
+    exclude: Vec<String>,
+) -> Vec<SearchResult> {
+    let documents = parse_documents(files);
+    let filter = TagFilter {
+        include,
+        any,
+        exclude,
+    };
+    let todos = documents.iter().flat_map(Document::todos);
+    filter_todos(todos, &filter)
+}
+
+#[wasm_bindgen(js_name = searchRequires)]
+pub fn search_requires(files: Vec<VaultFile>) -> Vec<PersonResults> {
+    let documents = parse_documents(files);
+    combine_requires(&documents)
+        .into_iter()
+        .map(|(person, tasks)| PersonResults { person, tasks })
+        .collect()
+}
+
+#[wasm_bindgen(js_name = headingCheck)]
+pub fn heading_check(files: Vec<VaultFile>) -> Vec<HeadingMismatch> {
+    let documents = parse_documents(files);
+    documents.iter().filter_map(Document::heading_mismatch).collect()
+}
+
+#[wasm_bindgen(js_name = collectTags)]
+pub fn collect_tags(files: Vec<VaultFile>) -> Vec<String> {
+    let documents = parse_documents(files);
+    let mut tags: Vec<String> = documents.iter().flat_map(Document::tags).collect();
+    tags.sort();
+    tags.dedup();
+    tags
 }

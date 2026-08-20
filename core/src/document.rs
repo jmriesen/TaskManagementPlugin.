@@ -5,6 +5,8 @@ use std::sync::LazyLock;
 use serde::Serialize;
 use tree_sitter::{Parser, StreamingIterator};
 use tree_sitter::{Query, QueryCursor, Tree};
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::helper::StreamingIteratorExt;
 use crate::inline::InLineTree;
@@ -17,6 +19,7 @@ struct ToDoEntry<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
+#[cfg_attr(feature = "wasm", wasm_bindgen(getter_with_clone))]
 pub struct SearchResult {
     pub ordinal: String,
     pub display: String,
@@ -95,7 +98,22 @@ pub fn filter_todos<I: IntoIterator<Item = SearchResult>>(
         .collect()
 }
 
+/// Merge the `#Requires<Name>` results from every document in a vault into a
+/// single `person -> tasks` map.
+pub fn combine_requires<'a, I: IntoIterator<Item = &'a Document>>(
+    documents: I,
+) -> HashMap<String, Vec<SearchResult>> {
+    let mut combined: HashMap<String, Vec<SearchResult>> = HashMap::new();
+    for document in documents {
+        for (person, results) in document.requires() {
+            combined.entry(person).or_default().extend(results);
+        }
+    }
+    combined
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "wasm", wasm_bindgen(getter_with_clone))]
 pub struct HeadingMismatch {
     pub path: String,
     pub filename: String,
