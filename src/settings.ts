@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import TaskManagment from "./main";
+import TaskManagement from "./main";
 
 export interface TaskManagementSettings {
 	mySetting: string;
@@ -10,9 +10,9 @@ export const DEFAULT_SETTINGS: TaskManagementSettings = {
 }
 
 export class SettingTab extends PluginSettingTab {
-	plugin: TaskManagment;
+	plugin: TaskManagement;
 
-	constructor(app: App, plugin: TaskManagment) {
+	constructor(app: App, plugin: TaskManagement) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}

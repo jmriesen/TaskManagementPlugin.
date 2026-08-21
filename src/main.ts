@@ -10,7 +10,7 @@ import { NamedTagFilter } from "../task-management-bindings/pkg/task_management_
 import wasmBinary from '../task-management-bindings/pkg/task_management_bindings_bg.wasm';
 import * as wasmNamespace from '../task-management-bindings/pkg/task_management_bindings';
 
-export default class TaskManagment extends Plugin {
+export default class TaskManagement extends Plugin {
 	settings: TaskManagementSettings;
 	vaultIndex: VaultIndex;
 	tagFilterConfig: TagFilterConfig;
