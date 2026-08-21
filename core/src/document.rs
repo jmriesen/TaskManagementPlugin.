@@ -35,21 +35,11 @@ impl SearchResult {
         }: &ToDoEntry,
         path: &Path,
     ) -> Self {
-        let tags: Vec<_> = task_tags
-            .iter()
-            .chain(heading_tags)
-            .map(|x| x.to_string())
-            .collect();
+        let tags: Vec<String> = task_tags.iter().chain(heading_tags).map(ToString::to_string).collect();
 
-        let mut display = body
-            //Only display the first line up to the tags.
-            .split(['\n', '#'])
-            .next()
-            .unwrap_or_default()
-            .to_string();
-
-        let tag_string = tags.clone().join(" ");
-        display.push_str(&tag_string);
+        //Only display the first line up to the tags.
+        let first_line = body.split(['\n', '#']).next().unwrap_or_default();
+        let display = format!("{first_line}{}", tags.join(" "));
 
         SearchResult {
             ordinal: display.clone(),
