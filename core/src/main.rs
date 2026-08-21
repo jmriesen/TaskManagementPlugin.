@@ -90,8 +90,8 @@ fn main() {
             }
         }
         Command::Requires { dir_path } => {
-            let documents: Vec<_> = find_paths(&dir_path).map(|p| Document::from_file(&p)).collect();
-            let combined = combine_requires(&documents);
+            let documents = find_paths(&dir_path).map(|p| Document::from_file(&p));
+            let combined = combine_requires(documents);
             print!(
                 "{}",
                 serde_json::to_string_pretty(&combined).expect("serialization should never fail.")

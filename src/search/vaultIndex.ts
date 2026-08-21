@@ -42,4 +42,45 @@ export class VaultIndex {
 		const files = await this.readAllFiles();
 		return headingCheck(files);
 	}
+
+	/**
+	 * TEMPORARY DIAGNOSTIC: parses one file at a time (instead of the whole
+	 * vault in a single wasm call) so the console shows exactly which file was
+	 * being processed if/when it hangs. Remove once the hang is root-caused.
+	 */
+	async diagnoseHang(): Promise<void> {
+		const files = await this.readAllFiles();
+		console.log(`diagnoseHang: starting, ${files.length} files`);
+		for (const file of files) {
+			const path = file.path;
+			console.log(`diagnoseHang: parsing ${path} (${file.content.length} chars)`);
+			searchTodos([file], [], [], []);
+			console.log(`diagnoseHang: done ${path}`);
+		}
+		console.log("diagnoseHang: finished all files, no hang");
+	}
+
+	/**
+	 * TEMPORARY DIAGNOSTIC: bisects the *bulk* call (all files in one wasm
+	 * invocation, which is what every real search command uses) by trying it
+	 * with increasing batch sizes, logging before/after each attempt. Since
+	 * per-file calls are known-good, this narrows down whether the hang is a
+	 * function of how many files are processed within a single wasm call
+	 * (no JS boundary crossing in between) rather than total work done.
+	 * Remove once the hang is root-caused.
+	 */
+	async diagnoseBulkHang(): Promise<void> {
+		const files = await this.readAllFiles();
+		console.log(`diagnoseBulkHang: starting, ${files.length} files total`);
+		const sizes = [1, 2, 5, 10, 20, 50, 100, 150, files.length];
+		for (const n of sizes) {
+			if (n > files.length) continue;
+			const batch = files.slice(0, n);
+			console.log(`diagnoseBulkHang: trying batch of ${n} files...`);
+			const start = Date.now();
+			searchTodos(batch, [], [], []);
+			console.log(`diagnoseBulkHang: batch of ${n} succeeded in ${Date.now() - start}ms`);
+		}
+		console.log("diagnoseBulkHang: finished all batch sizes, no hang");
+	}
 }

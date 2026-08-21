@@ -60,6 +60,24 @@ export default class TaskManagement extends Plugin {
 				new HeadingCheckModal(this.app, await this.vaultIndex.headingMismatches()).open();
 			},
 		});
+
+		// TEMPORARY DIAGNOSTIC: see VaultIndex.diagnoseHang. Remove once the
+		// hang is root-caused.
+		this.addCommand({
+			id: "debug-find-hanging-file",
+			name: "Debug: find hanging file",
+			callback: async () => {
+				await this.vaultIndex.diagnoseHang();
+			},
+		});
+
+		this.addCommand({
+			id: "debug-bulk-hang",
+			name: "Debug: bisect bulk search hang",
+			callback: async () => {
+				await this.vaultIndex.diagnoseBulkHang();
+			},
+		});
 	}
 
 	/** Re-registers one command per named filter, replacing whatever was registered from the previous version of the file. */

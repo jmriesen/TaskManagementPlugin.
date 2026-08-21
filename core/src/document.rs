@@ -91,7 +91,13 @@ pub fn filter_todos<I: IntoIterator<Item = SearchResult>>(
 
 /// Merge the `#Requires<Name>` results from every document in a vault into a
 /// single `person -> tasks` map.
-pub fn combine_requires<'a, I: IntoIterator<Item = &'a Document>>(
+///
+/// Takes documents by value (rather than `&Document`) so each one — and the
+/// tree-sitter `Tree` it holds — can be dropped as soon as its `requires()`
+/// have been extracted, instead of every document in the vault staying alive
+/// for the whole call. See the note in task-management-bindings/src/lib.rs
+/// for why that matters under wasm.
+pub fn combine_requires<I: IntoIterator<Item = Document>>(
     documents: I,
 ) -> HashMap<String, Vec<SearchResult>> {
     let mut combined: HashMap<String, Vec<SearchResult>> = HashMap::new();

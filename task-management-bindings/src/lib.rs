@@ -111,13 +111,19 @@ pub struct PersonResults {
     pub tasks: Vec<SearchResult>,
 }
 
-fn parse_documents(files: Vec<VaultFile>) -> Vec<Document> {
-    files
-        .into_iter()
-        .map(|f| Document::parse(f.content, PathBuf::from(f.path)))
-        .collect()
+fn parse_document(f: VaultFile) -> Document {
+    Document::parse(f.content, PathBuf::from(f.path))
 }
 
+// NOTE: each of the functions below parses and consumes one file at a time
+// (`into_iter().flat_map/filter_map(...)`) rather than collecting every
+// `Document` into a `Vec<Document>` up front. Under wasm32 (whose freestanding
+// allocator never reclaims memory) holding every file's tree-sitter `Tree`
+// alive simultaneously for the whole call caused an out-of-bounds
+// `RuntimeError: unreachable` on real, hundreds-of-files vaults, even though
+// the same total work succeeded fine when done one file per call. Streaming
+// keeps at most one `Document` (and its `Tree`) alive at a time, matching the
+// peak memory of that known-good per-file case.
 #[wasm_bindgen(js_name = searchTodos)]
 pub fn search_todos(
     files: Vec<VaultFile>,
@@ -125,20 +131,21 @@ pub fn search_todos(
     any: Vec<String>,
     exclude: Vec<String>,
 ) -> Vec<SearchResult> {
-    let documents = parse_documents(files);
     let filter = TagFilter {
         include,
         any,
         exclude,
     };
-    let todos = documents.iter().flat_map(Document::todos);
+    let todos = files
+        .into_iter()
+        .flat_map(|f| parse_document(f).todos());
     filter_todos(todos, &filter)
 }
 
 #[wasm_bindgen(js_name = searchRequires)]
 pub fn search_requires(files: Vec<VaultFile>) -> Vec<PersonResults> {
-    let documents = parse_documents(files);
-    combine_requires(&documents)
+    let documents = files.into_iter().map(parse_document);
+    combine_requires(documents)
         .into_iter()
         .map(|(person, tasks)| PersonResults { person, tasks })
         .collect()
@@ -146,14 +153,18 @@ pub fn search_requires(files: Vec<VaultFile>) -> Vec<PersonResults> {
 
 #[wasm_bindgen(js_name = headingCheck)]
 pub fn heading_check(files: Vec<VaultFile>) -> Vec<HeadingMismatch> {
-    let documents = parse_documents(files);
-    documents.iter().filter_map(Document::heading_mismatch).collect()
+    files
+        .into_iter()
+        .filter_map(|f| parse_document(f).heading_mismatch())
+        .collect()
 }
 
 #[wasm_bindgen(js_name = collectTags)]
 pub fn collect_tags(files: Vec<VaultFile>) -> Vec<String> {
-    let documents = parse_documents(files);
-    let mut tags: Vec<String> = documents.iter().flat_map(Document::tags).collect();
+    let mut tags: Vec<String> = files
+        .into_iter()
+        .flat_map(|f| parse_document(f).tags())
+        .collect();
     tags.sort();
     tags.dedup();
     tags
