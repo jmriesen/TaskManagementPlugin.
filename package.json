@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-task-management",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Search and filter tasks by tag across your vault.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
