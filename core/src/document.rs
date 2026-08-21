@@ -1,14 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use serde::Serialize;
-use tree_sitter::{Parser, StreamingIterator};
-use tree_sitter::{Query, QueryCursor, Tree};
+use tree_sitter::{Node, Parser, Tree};
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::helper::StreamingIteratorExt;
 use crate::inline::InLineTree;
 
 struct ToDoEntry<'a> {
@@ -142,20 +139,28 @@ impl Document {
         Self { tree, source, path }
     }
 
+    // TEMPORARY WORKAROUND (added 2026-08-20, expected to be reverted within a
+    // year): this used to be a tree-sitter `Query`:
+    //
+    //     static SELECT_INLINE: LazyLock<Query> = LazyLock::new(|| {
+    //         Query::new(&tree_sitter_md::LANGUAGE.into(), "(inline) @inline").unwrap()
+    //     });
+    //     let mut cursor = QueryCursor::new();
+    //     let mut matches = cursor.matches(&SELECT_INLINE, self.tree.root_node(), self.source.as_bytes());
+    //     ...(iterate matches, InLineTree::parse each captured node, collect tags)...
+    //
+    // See the identical note on `InLineTree::tags` in inline.rs for why: `Query::new`
+    // causes memory corruption under wasm32-unknown-unknown, in tree-sitter's own C
+    // query compiler, not in this crate or the tree-sitter-markdown grammar. This
+    // walks the tree manually instead, since `Parser::parse` is unaffected. Revert
+    // to the `Query`-based version above once the upstream bug is fixed.
     pub fn tags(&self) -> Vec<String> {
-        static SELECT_INLINE: LazyLock<Query> = LazyLock::new(|| {
-            Query::new(&tree_sitter_md::LANGUAGE.into(), "(inline) @inline").unwrap()
-        });
+        let mut inline_nodes = vec![];
+        collect_nodes_of_kind(self.tree.root_node(), "inline", &mut inline_nodes);
 
-        let mut cursor = QueryCursor::new();
         let mut tags = vec![];
-        let mut matches = cursor.matches(
-            &SELECT_INLINE,
-            self.tree.root_node(),
-            self.source.as_bytes(),
-        );
-        while let Some(m) = matches.next() {
-            let inline_tree = InLineTree::parse(&self.source, m.captures[0].node);
+        for node in inline_nodes {
+            let inline_tree = InLineTree::parse(&self.source, node);
             tags.extend(inline_tree.tags().iter().map(|s| s.to_string()));
         }
         tags
@@ -164,8 +169,7 @@ impl Document {
     pub fn heading_mismatch(&self) -> Option<HeadingMismatch> {
         let filename = self.path.file_stem()?.to_str()?.to_owned();
 
-        let mut cursor = QueryCursor::new();
-        let heading = self.first_h1(&mut cursor).map(|h| h.text().to_owned());
+        let heading = self.first_h1().map(|h| h.text().to_owned());
 
         if heading.as_deref() == Some(filename.as_str()) {
             None
@@ -179,8 +183,8 @@ impl Document {
     }
 
     pub fn todos(&self) -> Vec<SearchResult> {
-        let mut cursor = QueryCursor::new();
-        self.todo_entries(&mut cursor)
+        self.todo_entries()
+            .iter()
             .map(|x| SearchResult::new(x, &self.path))
             .collect()
     }
@@ -202,66 +206,104 @@ impl Document {
         map
     }
 
-    fn first_h1<'a>(&'a self, cursor: &'a mut QueryCursor) -> Option<InLineTree<'a>> {
-        static SELECT_H1: LazyLock<Query> = LazyLock::new(|| {
-            Query::new(
-                &tree_sitter_md::LANGUAGE.into(),
-                "(atx_heading (atx_h1_marker) (inline) @heading)",
-            )
-            .unwrap()
-        });
-
-        cursor
-            .matches(&SELECT_H1, self.tree.root_node(), self.source.as_bytes())
-            .next()
-            .map(|m| InLineTree::parse(&self.source, m.captures[0].node))
+    // TEMPORARY WORKAROUND (see the note on `tags` above for why): this used
+    // to be a tree-sitter `Query`:
+    //
+    //     static SELECT_H1: LazyLock<Query> = LazyLock::new(|| {
+    //         Query::new(&tree_sitter_md::LANGUAGE.into(), "(atx_heading (atx_h1_marker) (inline) @heading)").unwrap()
+    //     });
+    //     cursor.matches(&SELECT_H1, self.tree.root_node(), self.source.as_bytes())
+    //         .next()
+    //         .map(|m| InLineTree::parse(&self.source, m.captures[0].node))
+    fn first_h1(&self) -> Option<InLineTree<'_>> {
+        find_first_h1(self.tree.root_node(), &self.source)
     }
 
-    fn todo_entries<'a>(
-        &'a self,
-        cursor: &'a mut QueryCursor,
-    ) -> impl StreamingIterator<Item = ToDoEntry<'a>> + use<'a> {
-        static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
-            Query::new(
-                &tree_sitter_md::LANGUAGE.into(),
-                "
-(section
-(atx_heading
-      (_)
-        (inline) @heading.inline)
-    (list
-        (list_item
-                (task_list_marker_unchecked)
-                    (paragraph
-                      ((inline) @task.inline)
-                    )
-        )
-    )
-)
-",
-            )
-            .unwrap()
-        });
+    // TEMPORARY WORKAROUND (see the note on `tags` above for why): this used
+    // to be a tree-sitter `Query`:
+    //
+    //     static SELECT_TODO: LazyLock<Query> = LazyLock::new(|| {
+    //         Query::new(&tree_sitter_md::LANGUAGE.into(), "
+    //             (section
+    //               (atx_heading (_) (inline) @heading.inline)
+    //               (list (list_item (task_list_marker_unchecked) (paragraph ((inline) @task.inline)))))
+    //         ").unwrap()
+    //     });
+    //     cursor.matches(&SELECT_TODO, self.tree.root_node(), self.source.as_bytes())
+    //         .map(|match| { ...extract heading.inline and task.inline captures, build a ToDoEntry per match... })
+    fn todo_entries(&self) -> Vec<ToDoEntry<'_>> {
+        let mut sections = vec![];
+        collect_nodes_of_kind(self.tree.root_node(), "section", &mut sections);
 
-        cursor
-            .matches(&SELECT_TODO, self.tree.root_node(), self.source.as_bytes())
-            .map(move |r#match| {
-                let extract = |id| {
-                    let node = r#match
-                        .nodes_for_capture_index(SELECT_TODO.capture_index_for_name(id).unwrap())
-                        .next()
-                        .expect("expect exactly one node");
-                    InLineTree::parse(&self.source, node)
-                };
-                let headline = extract("heading.inline");
-                let task_tree = extract("task.inline");
+        sections
+            .into_iter()
+            .flat_map(|section| section_todo_entries(section, &self.source))
+            .collect()
+    }
+}
 
-                ToDoEntry {
-                    body: task_tree.text,
-                    heading_tags: headline.tags(),
-                    task_tags: task_tree.tags(),
-                    lnum: task_tree.start_point.row + 1,
-                }
+/// Collect every descendant node (including `node` itself) whose `kind()` matches, in document order.
+fn collect_nodes_of_kind<'a>(node: Node<'a>, kind: &str, out: &mut Vec<Node<'a>>) {
+    if node.kind() == kind {
+        out.push(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_nodes_of_kind(child, kind, out);
+    }
+}
+
+fn first_child_of_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    node.children(&mut cursor).find(|c| c.kind() == kind)
+}
+
+/// Depth-first search for the first `atx_heading` that has both an
+/// `atx_h1_marker` and an `inline` child, mirroring the original SELECT_H1 query.
+fn find_first_h1<'a>(node: Node, source: &'a str) -> Option<InLineTree<'a>> {
+    if node.kind() == "atx_heading" && first_child_of_kind(node, "atx_h1_marker").is_some() {
+        if let Some(inline) = first_child_of_kind(node, "inline") {
+            return Some(InLineTree::parse(source, inline));
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(found) = find_first_h1(child, source) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// One `section`'s todo entries, mirroring what SELECT_TODO matched per section:
+/// the section's heading text paired with each unchecked task item under it.
+fn section_todo_entries<'a>(section: Node, source: &'a str) -> Vec<ToDoEntry<'a>> {
+    let Some(atx_heading) = first_child_of_kind(section, "atx_heading") else {
+        return vec![];
+    };
+    let Some(heading_inline) = first_child_of_kind(atx_heading, "inline") else {
+        return vec![];
+    };
+    let headline = InLineTree::parse(source, heading_inline);
+
+    let Some(list) = first_child_of_kind(section, "list") else {
+        return vec![];
+    };
+
+    let mut cursor = list.walk();
+    list.children(&mut cursor)
+        .filter(|item| item.kind() == "list_item")
+        .filter(|item| first_child_of_kind(*item, "task_list_marker_unchecked").is_some())
+        .filter_map(|item| {
+            let paragraph = first_child_of_kind(item, "paragraph")?;
+            let task_inline = first_child_of_kind(paragraph, "inline")?;
+            let task_tree = InLineTree::parse(source, task_inline);
+            Some(ToDoEntry {
+                body: task_tree.text,
+                heading_tags: headline.tags(),
+                task_tags: task_tree.tags(),
+                lnum: task_tree.start_point.row + 1,
             })
-    }
+        })
+        .collect()
 }

@@ -1,5 +1,4 @@
 pub mod document;
-mod helper;
 mod inline;
 #[cfg(test)]
 mod test_helpers;
