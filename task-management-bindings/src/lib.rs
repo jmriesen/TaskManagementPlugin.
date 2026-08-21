@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use core::document::Document;
-use core::{combine_requires, filter_todos, HeadingMismatch, SearchResult, TagFilter};
+use core::{combine_requires, filter_todos, parse_tag_filters, HeadingMismatch, SearchResult, TagFilter};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -157,4 +157,27 @@ pub fn collect_tags(files: Vec<VaultFile>) -> Vec<String> {
     tags.sort();
     tags.dedup();
     tags
+}
+
+/// One entry of the `name -> TagFilter` map `core::parse_tag_filters` returns —
+/// wasm-bindgen has no native map/record type, so the map crosses the
+/// boundary as a `Vec` of these, same trick as `PersonResults` above.
+#[wasm_bindgen(getter_with_clone)]
+pub struct NamedTagFilter {
+    pub name: String,
+    pub filter: TagFilter,
+}
+
+/// Parse a shared TOML config file (see `core::tag_filters` for the format)
+/// into named tag filters the plugin can turn into commands.
+#[wasm_bindgen(js_name = parseTagFilters)]
+pub fn parse_tag_filters_js(source: &str) -> Result<Vec<NamedTagFilter>, JsValue> {
+    parse_tag_filters(source)
+        .map(|filters| {
+            filters
+                .into_iter()
+                .map(|(name, filter)| NamedTagFilter { name, filter })
+                .collect()
+        })
+        .map_err(|e| JsValue::from_str(&e))
 }

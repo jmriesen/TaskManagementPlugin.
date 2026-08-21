@@ -1,9 +1,11 @@
 pub mod document;
 mod inline;
+pub mod tag_filters;
 #[cfg(test)]
 mod test_helpers;
 
 pub use document::{combine_requires, filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
+pub use tag_filters::parse_tag_filters;
 
 #[cfg(test)]
 mod tests {
