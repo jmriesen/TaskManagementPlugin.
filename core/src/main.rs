@@ -100,10 +100,19 @@ fn main() {
     }
 }
 
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with('.'))
+}
+
 fn find_paths(dir: &Path) -> impl Iterator<Item = PathBuf> {
     let mut stack = vec![dir.to_path_buf()];
     std::iter::from_fn(move || {
         while let Some(path) = stack.pop() {
+            if is_hidden(&path) {
+                continue;
+            }
             if path.is_dir() {
                 if let Ok(entries) = std::fs::read_dir(&path) {
                     stack.extend(entries.filter_map(|e| e.ok()).map(|e| e.path()));
@@ -114,4 +123,41 @@ fn find_paths(dir: &Path) -> impl Iterator<Item = PathBuf> {
         }
         None
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn setup(files: &[&str]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("find_paths_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for file in files {
+            let path = dir.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn skips_hidden_files_and_directories() {
+        let dir = setup(&[
+            "visible.md",
+            ".hidden.md",
+            ".hidden_dir/nested.md",
+            "visible_dir/nested.md",
+            "visible_dir/.hidden_nested.md",
+        ]);
+
+        let found: HashSet<PathBuf> = find_paths(&dir).collect();
+
+        assert_eq!(
+            found,
+            HashSet::from([dir.join("visible.md"), dir.join("visible_dir/nested.md")])
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
