@@ -1,12 +1,16 @@
 pub mod document;
 mod inline;
+mod search_result;
+mod tag_filter;
 pub mod tag_filters;
 #[cfg(test)]
 mod test_helpers;
+mod todo_walk;
+mod tree_util;
 
-pub use document::{
-    Document, HeadingMismatch, SearchResult, TagFilter, combine_requires, filter_todos,
-};
+pub use document::{Document, HeadingMismatch, combine_requires};
+pub use search_result::SearchResult;
+pub use tag_filter::{TagFilter, filter_todos};
 pub use tag_filters::parse_tag_filters;
 
 #[cfg(test)]

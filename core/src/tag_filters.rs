@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::document::TagFilter;
+use crate::tag_filter::TagFilter;
 
 /// Parse a shared config file into a `name -> TagFilter` map, so the same
 /// named filters can be reused across every frontend (CLI, Obsidian) instead
