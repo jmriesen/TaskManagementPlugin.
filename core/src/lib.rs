@@ -4,13 +4,15 @@ pub mod tag_filters;
 #[cfg(test)]
 mod test_helpers;
 
-pub use document::{combine_requires, filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
+pub use document::{
+    Document, HeadingMismatch, SearchResult, TagFilter, combine_requires, filter_todos,
+};
 pub use tag_filters::parse_tag_filters;
 
 #[cfg(test)]
 mod tests {
+    use super::{Document, HeadingMismatch, SearchResult, TagFilter, filter_todos};
     use std::path::Path;
-    use super::{filter_todos, Document, HeadingMismatch, SearchResult, TagFilter};
 
     #[test]
     fn get_next_actions() {
@@ -39,14 +41,16 @@ mod tests {
     #[test]
     fn get_heading_level_tags() {
         let results = Document::from_file(Path::new("test_files/heading_level_tags.md")).todos();
-        dbg!(&results);
         assert_eq!(
             results[0].tags,
-            vec!["#NextAction".to_string(), "#HeadingTag".to_string()]
+            vec!["#NextAction".to_string(), "#H1tag".to_string(), "#H2tag".to_string()]
         );
-        assert_eq!(results[1].tags, vec!["#HeadingTag".to_string()]);
-        assert_eq!(results[2].tags, vec!["#NextAction".to_string(),]);
-        assert_eq!(results[3].tags, Vec::<String>::new());
+        assert_eq!(results[1].tags, vec!["#H1tag".to_string(), "#H2tag".to_string()]);
+        assert_eq!(
+            results[2].tags,
+            vec!["#NextAction".to_string(), "#H1tag".to_string()]
+        );
+        assert_eq!(results[3].tags, vec!["#H1tag".to_string()]);
     }
 
     #[test]
@@ -90,8 +94,8 @@ mod tests {
     #[test]
     fn heading_mismatch_detected() {
         // filename is "heading_mismatch_test", heading is "Wrong Heading" — should mismatch
-        let result =
-            Document::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
+        let result = Document::from_file(Path::new("test_files/heading_mismatch_test.md"))
+            .heading_mismatch();
         assert_eq!(
             result,
             Some(HeadingMismatch {
@@ -104,8 +108,8 @@ mod tests {
 
     #[test]
     fn heading_match_returns_none() {
-        let result =
-            Document::from_file(Path::new("test_files/heading_mismatch_test.md")).heading_mismatch();
+        let result = Document::from_file(Path::new("test_files/heading_mismatch_test.md"))
+            .heading_mismatch();
         assert!(result.is_some());
     }
 
