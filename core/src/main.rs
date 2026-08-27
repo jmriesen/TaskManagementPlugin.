@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use core::document::Document;
+use core::tag_filters::prefix_tags;
 use core::{combine_requires, filter_todos, TagFilter};
 
 #[derive(Parser)]
@@ -48,25 +49,19 @@ fn main() {
             exclude,
         } => {
             let filter = TagFilter {
-                include: include.iter().map(|t| format!("#{t}")).collect(),
-                any: any.iter().map(|t| format!("#{t}")).collect(),
-                exclude: exclude.iter().map(|t| format!("#{t}")).collect(),
+                include: prefix_tags(include),
+                any: prefix_tags(any),
+                exclude: prefix_tags(exclude),
             };
             let todos = find_paths(&dir_path).flat_map(|p| Document::from_file(&p).todos());
             let results = filter_todos(todos, &filter);
-            print!(
-                "{}",
-                serde_json::to_string_pretty(&results).expect("serialization should never fail.")
-            );
+            print_json(&results);
         }
         Command::HeadingCheck { dir_path } => {
             let results: Vec<_> = find_paths(&dir_path)
                 .filter_map(|p| Document::from_file(&p).heading_mismatch())
                 .collect();
-            print!(
-                "{}",
-                serde_json::to_string_pretty(&results).expect("serialization should never fail.")
-            );
+            print_json(&results);
         }
         Command::Tags { dir_path } => {
             let cache = dir_path.join(".tag_cache.json");
@@ -92,12 +87,16 @@ fn main() {
         Command::Requires { dir_path } => {
             let documents = find_paths(&dir_path).map(|p| Document::from_file(&p));
             let combined = combine_requires(documents);
-            print!(
-                "{}",
-                serde_json::to_string_pretty(&combined).expect("serialization should never fail.")
-            );
+            print_json(&combined);
         }
     }
+}
+
+fn print_json(value: &impl serde::Serialize) {
+    print!(
+        "{}",
+        serde_json::to_string_pretty(value).expect("serialization should never fail.")
+    );
 }
 
 fn is_hidden(path: &Path) -> bool {

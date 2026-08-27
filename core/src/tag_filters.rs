@@ -42,7 +42,9 @@ pub fn parse_tag_filters(source: &str) -> Result<BTreeMap<String, TagFilter>, St
     Ok(filters)
 }
 
-fn prefix_tags(tags: Vec<String>) -> Vec<String> {
+/// Add the leading `#` tags are stored with (see [`crate::SearchResult`]) to
+/// each of `tags`, unless it's already there.
+pub fn prefix_tags(tags: Vec<String>) -> Vec<String> {
     tags.into_iter()
         .map(|t| {
             if t.starts_with('#') {
