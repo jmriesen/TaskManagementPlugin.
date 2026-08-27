@@ -178,13 +178,6 @@ impl Document {
             .collect()
     }
 
-    pub fn next_actions(&self) -> Vec<SearchResult> {
-        self.todos()
-            .into_iter()
-            .filter(|x| x.tags.contains(&"#NextAction".into()))
-            .collect()
-    }
-
     pub fn requires(&self) -> HashMap<String, Vec<SearchResult>> {
         let mut map: HashMap<String, Vec<SearchResult>> = HashMap::new();
         for result in self.todos() {

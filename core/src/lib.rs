@@ -16,7 +16,12 @@ mod tests {
 
     #[test]
     fn get_next_actions() {
-        let results = Document::from_file(Path::new("test_files/test.md")).next_actions();
+        let todos = Document::from_file(Path::new("test_files/test.md")).todos();
+        let filter = TagFilter {
+            include: vec!["#NextAction".into()],
+            ..Default::default()
+        };
+        let results = filter_todos(todos, &filter);
         assert_eq!(
             results,
             vec![
