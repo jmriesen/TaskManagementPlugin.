@@ -123,7 +123,9 @@ fn parse_document(f: VaultFile) -> Document {
 // `RuntimeError: unreachable` on real, hundreds-of-files vaults, even though
 // the same total work succeeded fine when done one file per call. Streaming
 // keeps at most one `Document` (and its `Tree`) alive at a time, matching the
-// peak memory of that known-good per-file case.
+// peak memory of that known-good per-file case. (`core` now uses
+// pulldown-cmark and keeps no parse tree, but streaming still keeps peak
+// memory down.)
 #[wasm_bindgen(js_name = searchTodos)]
 pub fn search_todos(
     files: Vec<VaultFile>,
@@ -179,7 +181,7 @@ pub struct NamedTagFilter {
     pub filter: TagFilter,
 }
 
-/// Parse a shared TOML config file (see `core::tag_filters` for the format)
+/// Parse a shared markdown config file (see `core::tag_filters` for the format)
 /// into named tag filters the plugin can turn into commands.
 #[wasm_bindgen(js_name = parseTagFilters)]
 pub fn parse_tag_filters_js(source: &str) -> Result<Vec<NamedTagFilter>, JsValue> {

@@ -68,7 +68,7 @@ export default class TaskManagement extends Plugin {
 			this.removeCommand(id);
 		}
 		this.filterCommandIds = namedFilters.map(({ name, filter }) => {
-			const id = `search-filter-${name}`;
+			const id = `search-filter-${name.toLowerCase().replace(/\s+/g, "-")}`;
 			this.addCommand({
 				id,
 				name: `Search: ${name}`,

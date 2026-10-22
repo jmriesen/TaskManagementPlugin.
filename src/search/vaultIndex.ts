@@ -8,6 +8,7 @@ import {
 	PersonResults,
 	HeadingMismatch,
 } from "../../task-management-bindings/pkg/task_management_bindings";
+import { TAG_FILTERS_FILE_PATH } from "./tagFilterConfig";
 
 /**
  * Reads vault markdown files and runs them through the wasm search bindings.
@@ -22,8 +23,9 @@ export class VaultIndex {
 		this.app = app;
 	}
 
+	/** Every markdown file except the tag filter config, whose unchecked items would otherwise show up as todos. */
 	private async readAllFiles(): Promise<VaultFile[]> {
-		const files = this.app.vault.getMarkdownFiles();
+		const files = this.app.vault.getMarkdownFiles().filter((f) => f.path !== TAG_FILTERS_FILE_PATH);
 		const contents = await Promise.all(files.map((f) => this.app.vault.cachedRead(f)));
 		return files.map((f, i) => new VaultFile(f.path, contents[i]!));
 	}

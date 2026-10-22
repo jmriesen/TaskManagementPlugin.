@@ -1,17 +1,14 @@
 pub mod document;
-mod inline;
+mod markdown;
 mod search_result;
 mod tag_filter;
 pub mod tag_filters;
-#[cfg(test)]
-mod test_helpers;
-mod todo_walk;
-mod tree_util;
+mod todos;
 
 pub use document::{Document, HeadingMismatch, combine_requires};
 pub use search_result::SearchResult;
 pub use tag_filter::{TagFilter, filter_todos};
-pub use tag_filters::parse_tag_filters;
+pub use tag_filters::{TAG_FILTERS_FILE, parse_tag_filters};
 
 #[cfg(test)]
 mod tests {
@@ -52,14 +49,46 @@ mod tests {
         let results = Document::from_file(Path::new("test_files/heading_level_tags.md")).todos();
         assert_eq!(
             results[0].tags,
-            vec!["#NextAction".to_string(), "#H1tag".to_string(), "#H2tag".to_string()]
+            vec![
+                "#H1tag".to_string(),
+                "#H2tag".to_string(),
+                "#NextAction".to_string(),
+            ]
         );
-        assert_eq!(results[1].tags, vec!["#H1tag".to_string(), "#H2tag".to_string()]);
+        assert_eq!(
+            results[1].tags,
+            vec!["#H1tag".to_string(), "#H2tag".to_string()]
+        );
         assert_eq!(
             results[2].tags,
-            vec!["#NextAction".to_string(), "#H1tag".to_string()]
+            vec!["#H1tag".to_string(), "#NextAction".to_string(),]
         );
         assert_eq!(results[3].tags, vec!["#H1tag".to_string()]);
+    }
+
+    #[test]
+    fn sub_tasks_and_later_lists_are_found_and_inherit_parent_tags() {
+        let source = "# Project #P\n\
+                      - [ ] Parent #ReAg\n\
+                      \t- [ ] Child #ReAg #Extra\n\
+                      \t- [x] Done child\n\
+                      \n\
+                      Some prose.\n\
+                      \n\
+                      - [ ] Second list\n";
+        let results = Document::parse(source.to_owned(), "p.md".into()).todos();
+        let found: Vec<_> = results.iter().map(|r| (r.lnum, r.tags.clone())).collect();
+        assert_eq!(
+            found,
+            vec![
+                (2, vec!["#P".to_string(), "#ReAg".to_string(),]),
+                (
+                    3,
+                    vec!["#Extra".to_string(), "#P".to_string(), "#ReAg".to_string(),]
+                ),
+                (8, vec!["#P".to_string()]),
+            ]
+        );
     }
 
     #[test]
@@ -80,9 +109,9 @@ mod tests {
                     lnum: 2,
                 },
                 SearchResult {
-                    ordinal: "Another Alice item #RequiresAlice #NextAction".to_string(),
-                    display: "Another Alice item #RequiresAlice #NextAction".to_string(),
-                    tags: vec!["#RequiresAlice".to_string(), "#NextAction".to_string()],
+                    ordinal: "Another Alice item #NextAction #RequiresAlice".to_string(),
+                    display: "Another Alice item #NextAction #RequiresAlice".to_string(),
+                    tags: vec!["#NextAction".to_string(), "#RequiresAlice".to_string(),],
                     path: "test_files/requires_test.md".to_string(),
                     lnum: 4,
                 },

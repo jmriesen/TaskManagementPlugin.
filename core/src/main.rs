@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use core::document::Document;
 use core::tag_filters::prefix_tags;
-use core::{combine_requires, filter_todos, TagFilter};
+use core::{combine_requires, filter_todos, TagFilter, TAG_FILTERS_FILE};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -105,11 +105,14 @@ fn is_hidden(path: &Path) -> bool {
         .is_some_and(|n| n.starts_with('.'))
 }
 
+/// Every visible `.md` file under `dir`, except the tag filter config, whose
+/// unchecked items would otherwise show up as todos.
 fn find_paths(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    let config = dir.join(TAG_FILTERS_FILE);
     let mut stack = vec![dir.to_path_buf()];
     std::iter::from_fn(move || {
         while let Some(path) = stack.pop() {
-            if is_hidden(&path) {
+            if is_hidden(&path) || path == config {
                 continue;
             }
             if path.is_dir() {
@@ -141,9 +144,10 @@ mod tests {
     }
 
     #[test]
-    fn skips_hidden_files_and_directories() {
+    fn skips_hidden_files_directories_and_filter_config() {
         let dir = setup(&[
             "visible.md",
+            "task-filters.md",
             ".hidden.md",
             ".hidden_dir/nested.md",
             "visible_dir/nested.md",
