@@ -10,8 +10,8 @@ use crate::search_result::SearchResult;
 
 pub(crate) fn todos(source: &str, path: &Path) -> Vec<SearchResult> {
     // Tags of the headings and items enclosing the current position, outermost first.
-    let mut headings: Vec<(HeadingLevel, Vec<String>)> = vec![];
-    let mut parents: Vec<Vec<String>> = vec![];
+    let mut headings: Vec<(HeadingLevel, Vec<&str>)> = vec![];
+    let mut parents: Vec<Vec<&str>> = vec![];
     let mut todos = vec![];
 
     for event in outline(source) {
@@ -28,11 +28,10 @@ pub(crate) fn todos(source: &str, path: &Path) -> Vec<SearchResult> {
             } => {
                 if checked == Some(false) && !text.is_empty() {
                     let context = headings.iter().map(|(_, t)| t).chain(&parents).flatten();
-                    let mut all_tags: Vec<_> = tags.iter().chain(context.into_iter()).collect();
+                    let mut all_tags: Vec<&str> = tags.iter().chain(context).copied().collect();
                     all_tags.sort();
                     all_tags.dedup();
-                    let all_tags = all_tags.into_iter().cloned().collect();
-                    todos.push(SearchResult::new(text, all_tags, lnum, path));
+                    todos.push(SearchResult::new(text, &all_tags, lnum, path));
                 }
                 parents.push(tags);
             }

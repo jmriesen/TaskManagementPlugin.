@@ -56,6 +56,9 @@ impl Document {
 
     pub fn tags(&self) -> Vec<String> {
         markdown::tags(&self.source)
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     }
 
     pub fn heading_mismatch(&self) -> Option<HeadingMismatch> {

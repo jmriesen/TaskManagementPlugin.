@@ -18,7 +18,7 @@ pub(crate) enum OutlineEvent<'a> {
     Heading {
         level: HeadingLevel,
         text: &'a str,
-        tags: Vec<String>,
+        tags: Vec<&'a str>,
     },
     /// Yielded once the item's first paragraph is complete, so it comes
     /// before any of its sub-items.
@@ -27,7 +27,7 @@ pub(crate) enum OutlineEvent<'a> {
         checked: Option<bool>,
         /// The item's first paragraph, as written in the source.
         text: &'a str,
-        tags: Vec<String>,
+        tags: Vec<&'a str>,
         /// 1-based line the item starts on.
         lnum: usize,
     },
@@ -48,10 +48,11 @@ pub(crate) fn outline(source: &str) -> Outline<'_> {
 }
 
 /// Every tag in `source`, in document order, duplicates included.
-pub(crate) fn tags(source: &str) -> Vec<String> {
+pub(crate) fn tags(source: &str) -> Vec<&str> {
     let mut scanner = TagScanner::default();
     events(source)
-        .flat_map(|(event, _)| scanner.scan(&event))
+        .filter_map(|(event, range)| scanner.taggable(&event, range))
+        .flat_map(|range| tags_in(source, range))
         .collect()
 }
 
@@ -77,20 +78,20 @@ pub(crate) struct Outline<'a> {
     scanner: TagScanner,
     lines: LineCounter,
     /// Headings and items that have started but not ended, innermost last.
-    open: Vec<Open>,
+    open: Vec<Open<'a>>,
     /// An `ItemEnd` owed straight after an `ItemStart` that was only
     /// yielded when its item ended.
     pending: Option<OutlineEvent<'a>>,
 }
 
 /// A heading or item that has started but not ended.
-struct Open {
+struct Open<'a> {
     heading: Option<HeadingLevel>,
     start: usize,
     checked: Option<bool>,
     /// Source range of the first paragraph read so far.
     span: Option<Range<usize>>,
-    tags: Vec<String>,
+    tags: Vec<&'a str>,
     /// Whether its `ItemStart` has been yielded (after which its text is complete).
     yielded: bool,
 }
@@ -103,7 +104,7 @@ impl<'a> Iterator for Outline<'a> {
             return Some(event);
         }
         while let Some((event, range)) = self.events.next() {
-            let tags = self.scanner.scan(&event);
+            let taggable = self.scanner.taggable(&event, range.clone());
             match event {
                 Event::Start(Tag::Heading { level, .. }) => {
                     self.open.push(Open::new(Some(level), range.start))
@@ -154,7 +155,7 @@ impl<'a> Iterator for Outline<'a> {
                         let span = open.span.get_or_insert(range.clone());
                         // A link's start event spans the whole link, so the text inside it ends earlier.
                         span.end = span.end.max(range.end);
-                        open.tags.extend(tags);
+                        open.tags.extend(taggable.into_iter().flat_map(|r| tags_in(self.source, r)));
                     }
                 }
                 _ => {}
@@ -165,7 +166,7 @@ impl<'a> Iterator for Outline<'a> {
 }
 
 impl<'a> Outline<'a> {
-    fn yield_open(&mut self, open: &mut Open) -> OutlineEvent<'a> {
+    fn yield_open(&mut self, open: &mut Open<'a>) -> OutlineEvent<'a> {
         open.yielded = true;
         let text = open
             .span
@@ -187,7 +188,7 @@ impl<'a> Outline<'a> {
     }
 }
 
-impl Open {
+impl Open<'_> {
     fn new(heading: Option<HeadingLevel>, start: usize) -> Self {
         Self {
             heading,
@@ -251,38 +252,52 @@ struct TagScanner {
 }
 
 impl TagScanner {
-    /// Update the scanner's state for `event` and return any tags in it.
-    fn scan(&mut self, event: &Event) -> Vec<String> {
+    /// Update the scanner's state for `event`, and if it's text whose tags
+    /// count, return its source `range`.
+    ///
+    /// Returns the range rather than the event's own text so tags can borrow
+    /// from the source: merged or unescaped text is an owned `CowStr` that
+    /// only lives as long as the event.
+    fn taggable(&mut self, event: &Event, range: Range<usize>) -> Option<Range<usize>> {
         match event {
             Event::Start(Tag::Link { .. }) => self.link_depth += 1,
             Event::End(TagEnd::Link) => self.link_depth -= 1,
             Event::Start(Tag::CodeBlock(_) | Tag::MetadataBlock(_)) => self.in_literal = true,
             Event::End(TagEnd::CodeBlock | TagEnd::MetadataBlock(_)) => self.in_literal = false,
-            Event::Text(text) if self.link_depth == 0 && !self.in_literal => return tags_in(text),
+            Event::Text(_) if self.link_depth == 0 && !self.in_literal => return Some(range),
             _ => {}
         }
-        vec![]
+        None
     }
 }
 
-/// Every `#tag` in `text`: a `#` followed by a run of letters, digits, `_`,
-/// `-` or `/` that isn't all digits (so `#42` isn't a tag). Equivalent to the
-/// old tree-sitter grammar's `#[0-9]*[a-zA-Z_\-\/][a-zA-Z_\-\/0-9]*`, which
-/// also matched mid-word, e.g. the tag in `done.#Waiting`.
-fn tags_in(text: &str) -> Vec<String> {
+/// Every `#tag` in `range` of `source`: a `#` followed by a run of letters,
+/// digits, `_`, `-` or `/` that isn't all digits (so `#42` isn't a tag).
+/// Equivalent to the old tree-sitter grammar's
+/// `#[0-9]*[a-zA-Z_\-\/][a-zA-Z_\-\/0-9]*`, which also matched mid-word,
+/// e.g. the tag in `done.#Waiting`.
+///
+/// This reads raw source, so a `#` straight after `\` (an escape) or `&` (an
+/// entity like `&#x23;`) is skipped. That check looks at the whole source,
+/// since an escaped `#`'s text range starts after its backslash.
+fn tags_in(source: &str, range: Range<usize>) -> impl Iterator<Item = &str> {
     let is_tag_char = |c: char| c.is_ascii_alphanumeric() || "_-/".contains(c);
-    let mut tags = vec![];
-    let mut rest = text;
-    while let Some(hash) = rest.find('#') {
-        let after = &rest[hash + 1..];
-        let len = after.find(|c| !is_tag_char(c)).unwrap_or(after.len());
-        let name = &after[..len];
-        if name.chars().any(|c| !c.is_ascii_digit()) {
-            tags.push(format!("#{name}"));
+    let mut pos = range.start;
+    std::iter::from_fn(move || {
+        while let Some(found) = source[pos..range.end].find('#') {
+            let hash = pos + found;
+            let escaped = source[..hash].ends_with(['\\', '&']);
+            let len = source[hash + 1..range.end]
+                .find(|c| !is_tag_char(c))
+                .unwrap_or(range.end - hash - 1);
+            pos = hash + 1 + len;
+            let tag = &source[hash..pos];
+            if !escaped && tag[1..].chars().any(|c| !c.is_ascii_digit()) {
+                return Some(tag);
+            }
         }
-        rest = &after[len..];
-    }
-    tags
+        None
+    })
 }
 
 #[cfg(test)]
@@ -290,16 +305,25 @@ mod tests {
     use super::*;
     use OutlineEvent::*;
 
+    fn tags_in_vec(text: &str) -> Vec<&str> {
+        tags_in(text, 0..text.len()).collect()
+    }
+
     #[test]
     fn tags_follow_the_grammar_pattern() {
         assert_eq!(
-            tags_in("a #One and #Re_Ag #a/b-c"),
+            tags_in_vec("a #One and #Re_Ag #a/b-c"),
             vec!["#One", "#Re_Ag", "#a/b-c"]
         );
-        assert_eq!(tags_in("glued.#Waiting"), vec!["#Waiting"]);
-        assert_eq!(tags_in("#H1tag."), vec!["#H1tag"]);
-        assert_eq!(tags_in("issue #42 and #30m"), vec!["#30m"]);
-        assert!(tags_in("# lone ## hashes").is_empty());
+        assert_eq!(tags_in_vec("glued.#Waiting"), vec!["#Waiting"]);
+        assert_eq!(tags_in_vec("#H1tag."), vec!["#H1tag"]);
+        assert_eq!(tags_in_vec("issue #42 and #30m"), vec!["#30m"]);
+        assert!(tags_in_vec("# lone ## hashes").is_empty());
+    }
+
+    #[test]
+    fn escaped_hashes_and_entities_are_not_tags() {
+        assert_eq!(tags(r"\#Escaped &#x23;Entity &#35; #Real"), vec!["#Real"]);
     }
 
     #[test]
@@ -331,12 +355,12 @@ mod tests {
                 Heading {
                     level: HeadingLevel::H1,
                     text: "H #T",
-                    tags: vec!["#T".into()]
+                    tags: vec!["#T"]
                 },
                 ItemStart {
                     checked: Some(false),
                     text: "Parent #P\n  continued",
-                    tags: vec!["#P".into()],
+                    tags: vec!["#P"],
                     lnum: 2
                 },
                 ItemStart {
@@ -367,6 +391,6 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(items, vec![("First #A", vec!["#A".to_string()])]);
+        assert_eq!(items, vec![("First #A", vec!["#A"])]);
     }
 }
