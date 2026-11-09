@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use core::document::Document;
 use core::tag_filters::prefix_tags;
-use core::{combine_requires, filter_todos, TagFilter, TAG_FILTERS_FILE};
+use core::{combine_requires, filter_todos, parse_tag_filters, TagFilter, TAG_FILTERS_FILE};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -30,6 +31,10 @@ enum Command {
         #[arg(short, long)]
         exclude: Vec<String>,
     },
+    /// Search for todo items with a named filter from the vault's task-filters.md
+    SearchFilter { dir_path: PathBuf, name: String },
+    /// List the names of the filters in the vault's task-filters.md
+    Filters { dir_path: PathBuf },
     /// Find all #Requires<Name> tags and group results by person
     Requires { dir_path: PathBuf },
     /// Find files where the filename and the h1 heading don't match
@@ -53,9 +58,14 @@ fn main() {
                 any: prefix_tags(any),
                 exclude: prefix_tags(exclude),
             };
-            let todos = find_paths(&dir_path).flat_map(|p| Document::from_file(&p).todos());
-            let results = filter_todos(todos, &filter);
-            print_json(&results);
+            search_todos(&dir_path, &filter);
+        }
+        Command::SearchFilter { dir_path, name } => {
+            search_todos(&dir_path, &named_filter(&dir_path, &name));
+        }
+        Command::Filters { dir_path } => {
+            let names: Vec<_> = load_filters(&dir_path).into_keys().collect();
+            print_json(&names);
         }
         Command::HeadingCheck { dir_path } => {
             let results: Vec<_> = find_paths(&dir_path)
@@ -92,11 +102,46 @@ fn main() {
     }
 }
 
+fn search_todos(dir: &Path, filter: &TagFilter) {
+    let todos = find_paths(dir).flat_map(|p| Document::from_file(&p).todos());
+    print_json(&filter_todos(todos, filter));
+}
+
 fn print_json(value: &impl serde::Serialize) {
     print!(
         "{}",
         serde_json::to_string_pretty(value).expect("serialization should never fail.")
     );
+}
+
+/// Print `message` and exit, for errors the user should see without a panic's
+/// backtrace noise (nvim shows the CLI's output in a notification).
+fn fail(message: &str) -> ! {
+    eprintln!("{message}");
+    std::process::exit(1)
+}
+
+/// The vault's named filters, or none if it has no config file, as in Obsidian.
+fn load_filters(dir: &Path) -> BTreeMap<String, TagFilter> {
+    let path = dir.join(TAG_FILTERS_FILE);
+    if !path.exists() {
+        return BTreeMap::new();
+    }
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| fail(&format!("error reading {}: {e}", path.display())));
+    parse_tag_filters(&source)
+        .unwrap_or_else(|e| fail(&format!("Failed to parse {TAG_FILTERS_FILE}:\n{e}")))
+}
+
+fn named_filter(dir: &Path, name: &str) -> TagFilter {
+    let mut filters = load_filters(dir);
+    filters.remove(name).unwrap_or_else(|| {
+        let names: Vec<_> = filters.keys().map(String::as_str).collect();
+        fail(&format!(
+            "No filter named \"{name}\" in {TAG_FILTERS_FILE}. Filters: {}",
+            if names.is_empty() { "none".to_owned() } else { names.join(", ") }
+        ))
+    })
 }
 
 fn is_hidden(path: &Path) -> bool {
@@ -160,6 +205,23 @@ mod tests {
             found,
             HashSet::from([dir.join("visible.md"), dir.join("visible_dir/nested.md")])
         );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn filters_are_loaded_from_the_vault_config() {
+        let dir = std::env::temp_dir().join(format!("load_filters_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(load_filters(&dir).is_empty());
+
+        std::fs::write(
+            dir.join(TAG_FILTERS_FILE),
+            "## Next actions\n### Include\n- [x] #NextAction\n",
+        )
+        .unwrap();
+        assert_eq!(named_filter(&dir, "Next actions").include, vec!["#NextAction"]);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

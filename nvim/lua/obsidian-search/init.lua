@@ -33,11 +33,41 @@ function M.clear_tag_cache()
 	vim.notify("Tag cache cleared.", vim.log.levels.INFO)
 end
 
-function M.search_tasks(opts)
+-- Run a CLI command returning todos and show them in a picker.
+local function pick_todos(opts, command, title)
 	local pickers = require("telescope.pickers")
 	local finders = require("telescope.finders")
 	local conf = require("telescope.config").values
 
+	local raw = vim.fn.system(command)
+	if vim.v.shell_error ~= 0 then
+		vim.notify("obsidian-search " .. command[2] .. " failed:\n" .. raw, vim.log.levels.ERROR)
+		return
+	end
+	local response = vim.json.decode(raw)
+
+	pickers
+		.new(opts, {
+			prompt_title = title,
+			finder = finders.new_table({
+				results = response,
+				entry_maker = function(entry)
+					return {
+						value = entry,
+						display = entry.display,
+						ordinal = entry.ordinal,
+						path = entry.path,
+						lnum = entry.lnum,
+					}
+				end,
+			}),
+			previewer = conf.grep_previewer(opts),
+			sorter = conf.generic_sorter(opts),
+		})
+		:find()
+end
+
+function M.search_tasks(opts)
 	opts = opts or {}
 	local command = { vim.fn.expand(M.config.search_binary), "todos", vim.fn.expand(M.config.vault_path) }
 
@@ -62,30 +92,48 @@ function M.search_tasks(opts)
 		end
 	end
 
-	local raw = vim.fn.system(command)
+	pick_todos(opts, command, "Search Notes")
+end
+
+-- Search with a named filter from the vault's task-filters.md, shared with Obsidian.
+function M.search_filter(name, opts)
+	local command =
+		{ vim.fn.expand(M.config.search_binary), "search-filter", vim.fn.expand(M.config.vault_path), name }
+	pick_todos(opts or {}, command, "Search: " .. name)
+end
+
+-- Pick one of the filters in the vault's task-filters.md and search with it,
+-- like the per-filter "Search: <name>" commands in Obsidian.
+function M.search_filters(opts)
+	local pickers = require("telescope.pickers")
+	local finders = require("telescope.finders")
+	local conf = require("telescope.config").values
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+
+	opts = opts or {}
+	local binary = vim.fn.expand(M.config.search_binary)
+	local vault = vim.fn.expand(M.config.vault_path)
+	local raw = vim.fn.system({ binary, "filters", vault })
 	if vim.v.shell_error ~= 0 then
-		vim.notify("obsidian-search todos failed:\n" .. raw, vim.log.levels.ERROR)
+		vim.notify("obsidian-search filters failed:\n" .. raw, vim.log.levels.ERROR)
 		return
 	end
-	local response = vim.json.decode(raw)
+	local names = vim.json.decode(raw)
 
 	pickers
 		.new(opts, {
-			prompt_title = "Search Notes",
-			finder = finders.new_table({
-				results = response,
-				entry_maker = function(entry)
-					return {
-						value = entry,
-						display = entry.display,
-						ordinal = entry.ordinal,
-						path = entry.path,
-						lnum = entry.lnum,
-					}
-				end,
-			}),
-			previewer = conf.grep_previewer(opts),
+			prompt_title = "Task Filters",
+			finder = finders.new_table({ results = names }),
 			sorter = conf.generic_sorter(opts),
+			attach_mappings = function(bufnr, _)
+				actions.select_default:replace(function()
+					actions.close(bufnr)
+					local selection = action_state.get_selected_entry()
+					M.search_filter(selection[1])
+				end)
+				return true
+			end,
 		})
 		:find()
 end
